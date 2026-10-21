@@ -1,0 +1,2 @@
+import type { RequestHandler } from 'express';
+export const requestLogger: RequestHandler = (req, res, next) => { const startedAt = performance.now(); res.on('finish', () => console.info(JSON.stringify({ event: 'http_request', method: req.method, path: req.path, status: res.statusCode, durationMs: Math.round(performance.now() - startedAt), requestId: req.get('x-request-id') ?? undefined }))); next(); };

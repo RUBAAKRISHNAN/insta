@@ -1,0 +1,26 @@
+{
+  "name": "lumen-social",
+  "private": true,
+  "version": "0.1.0",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "concurrently -n api,web -c cyan,magenta \"npm run dev -w @lumen/api\" \"npm run dev -w @lumen/web\"",
+    "build": "npm run build -w @lumen/shared && npm run build -w @lumen/api && npm run build -w @lumen/web",
+    "typecheck": "npm run build -w @lumen/shared && npm run typecheck -w @lumen/api && npm run typecheck -w @lumen/web",
+    "lint": "npm run typecheck",
+    "test": "npm run build -w @lumen/shared && npm run test -w @lumen/api && npm run test -w @lumen/web",
+    "db:generate": "npm run db:generate -w @lumen/api",
+    "db:migrate": "npm run db:migrate -w @lumen/api"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.64.1",
+    "concurrently": "^9.1.2",
+    "prettier": "^3.4.2"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}

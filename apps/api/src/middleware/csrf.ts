@@ -1,0 +1,4 @@
+import crypto from 'node:crypto'; import type { RequestHandler } from 'express';
+const cookie='lumen_csrf', ttl=60*60*1000; const entries=new Map<string,number>();
+export const issueCsrf:RequestHandler=(_req,res)=>{const token=crypto.randomBytes(32).toString('base64url');entries.set(token,Date.now()+ttl);res.cookie(cookie,token,{httpOnly:false,secure:process.env.NODE_ENV==='production',sameSite:'lax',path:'/',maxAge:ttl});res.json({data:{csrfToken:token,expiresIn:ttl}})};
+export const csrfProtection:RequestHandler=(req,res,next)=>{if(!['POST','PATCH','PUT','DELETE'].includes(req.method))return next();const header=req.get('x-csrf-token'),value=req.cookies?.[cookie],expires=header&&entries.get(header);if(!header||header!==value||!expires||expires<Date.now()){if(header)entries.delete(header);return res.status(403).json({error:{code:'CSRF_REJECTED',message:'Invalid or expired CSRF token.'}})};entries.delete(header);next()};
