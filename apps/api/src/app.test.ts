@@ -1,4 +1,5 @@
-import request from 'supertest'; import { describe, expect, it } from 'vitest'; import { app } from './app.js';
+import request from 'supertest'; import { describe, expect, it, vi } from 'vitest'; import { app } from './app.js';
+vi.mock('./db/client.js', () => ({ checkDatabase: vi.fn().mockResolvedValue(false), getDb: vi.fn(), closeDatabase: vi.fn() }));
 describe('health endpoint', () => { it('returns a safe health response', async () => { const response = await request(app).get('/api/health'); expect(response.status).toBe(200); expect(response.body).toMatchObject({ status: 'ok', service: 'lumen-api' }); expect(response.body).not.toHaveProperty('databaseUrl'); }); });
 
 describe('csrf protection', () => { it('issues a token and rejects missing or cross-origin mutation tokens', async () => { const issued = await request(app).get('/api/csrf'); expect(issued.status).toBe(200); expect(issued.body.data.csrfToken).toBeTypeOf('string'); const missing = await request(app).post('/api/auth/logout').set('Origin','http://localhost:5173'); expect(missing.status).toBe(403); const foreign = await request(app).post('/api/auth/logout').set('Origin','https://attacker.example'); expect(foreign.status).toBe(403); }); });

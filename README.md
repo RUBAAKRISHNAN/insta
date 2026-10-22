@@ -55,6 +55,8 @@ curl http://localhost:4000/api/health
 
 `/api/health` returns only API and database availability; it never returns configuration values.
 
+`npm run test -w @lumen/api` runs the ordinary API unit-test suite and excludes `*.integration.test.ts`; the root `npm run test` therefore does not invoke the database integration suites. Run the separate `npm run test:integration -w @lumen/api` command for database-backed integration tests. Its guard requires `DATABASE_URL` to identify exactly `lumen_social_test` before Vitest starts and imports test files. Each integration test also imports the same guard before application modules, and the integration Vitest config runs it as setup, so directly selecting integration files through Vitest is guarded too. Set the URL explicitly in the process environment to a dedicated test database with the migrations already applied. The guard checks the database name, not the PostgreSQL role's privileges or server identity, so isolate the test role/database from development and production at the PostgreSQL access-control level. Guard-only validation tests can be run without a database using `npm run test:guard -w @lumen/api`.
+
 ## Project layout
 
 - `apps/web`: Vite, React, TypeScript, Tailwind frontend

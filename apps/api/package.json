@@ -9,7 +9,9 @@
     "start": "node dist/server.js",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "lint": "tsc -p tsconfig.json --noEmit",
-    "test": "vitest run src --maxWorkers=1",
+    "test": "vitest run --config vitest.unit.config.ts",
+    "test:integration": "node scripts/run-integration-tests.mjs",
+    "test:guard": "node --test scripts/database-url-guard.test.mjs",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate"
   },

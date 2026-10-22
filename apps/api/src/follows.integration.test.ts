@@ -1,3 +1,4 @@
+import '../scripts/integration-test-safety.mjs';
 import { randomUUID } from 'node:crypto';
 import { and, eq, inArray, sql } from 'drizzle-orm';
 import request from 'supertest';
