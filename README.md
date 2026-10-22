@@ -28,7 +28,7 @@ Keep the Vercel project root set to the repository root. The root `vercel.mjs` c
 Create the Render API service with the repository root as its working directory and these commands:
 
 ```text
-Build: npm ci && npm run build -w @lumen/shared && npm run build -w @lumen/api
+Build: npm ci --include=dev && npm run build -w @lumen/shared && npm run build -w @lumen/api
 Start: npm run start -w @lumen/api
 ```
 
