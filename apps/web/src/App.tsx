@@ -1,4 +1,17 @@
-import { useEffect, useMemo, useState, type FormEvent } from 'react';
+import {
+  Bell,
+  Camera,
+  Heart,
+  House,
+  LogOut,
+  MessageCircle,
+  MessagesSquare,
+  Plus,
+  Search,
+  UserRound,
+  X,
+} from 'lucide-react';
+import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from 'react';
 import type {
   FeedPostWithLikes,
   DiscoveredProfile,
@@ -29,6 +42,62 @@ type User = {
   avatarUrl?: string | null;
   isPrivate?: boolean;
 };
+
+function Brand() {
+  return (
+    <a className="brand" href="/" aria-label="Rubaagram home">
+      <span className="brand-mark" aria-hidden="true">
+        r
+      </span>
+      <span>rubaagram</span>
+    </a>
+  );
+}
+
+function Avatar({
+  username,
+  src,
+  className = '',
+}: {
+  username: string;
+  src?: string | null;
+  className?: string;
+}) {
+  return (
+    <span className={`avatar ${className}`} aria-hidden="true">
+      {src ? <img src={src} alt="" /> : username.slice(0, 1).toUpperCase()}
+    </span>
+  );
+}
+
+function IconButton({
+  label,
+  children,
+  className = '',
+  disabled,
+  onClick,
+  pressed,
+}: {
+  label: string;
+  children: ReactNode;
+  className?: string;
+  disabled?: boolean;
+  onClick: () => void;
+  pressed?: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      className={`icon-button ${className}`}
+      aria-label={label}
+      aria-pressed={pressed}
+      disabled={disabled}
+      onClick={onClick}
+    >
+      {children}
+    </button>
+  );
+}
 
 type ApiErrorBody = {
   error?: {
@@ -177,6 +246,7 @@ export function App() {
   if (restoreState === 'loading') {
     return (
       <main className="auth">
+        <Brand />
         <p role="status">Restoring session…</p>
       </main>
     );
@@ -186,6 +256,7 @@ export function App() {
     return (
       <main className="auth">
         <section className="auth-card" aria-labelledby="restore-error-title">
+          <Brand />
           <h1 id="restore-error-title">Unable to restore your session</h1>
           <p role="alert">The service could not be reached. Please try again.</p>
           <button onClick={() => setRestoreAttempt((attempt) => attempt + 1)}>Retry</button>
@@ -230,9 +301,8 @@ export function App() {
   return (
     <main className="auth">
       <section className="auth-card">
-        <a className="brand">
-          lumen<span>•</span>
-        </a>
+        <Brand />
+        <p className="auth-kicker">A little more connection, every day.</p>
         <h1>{register ? 'Create account' : 'Welcome back'}</h1>
         <form onSubmit={submit}>
           {register && (
@@ -439,16 +509,114 @@ function Profile({ user, setUser }: { user: User; setUser: (user: User | null) =
 
   return (
     <main className="authenticated-layout">
-      <HomeFeed
-        userId={user.id}
-        refreshKey={feedRefresh}
-        onOpenProfile={setSelectedProfile}
-      />
-      <section className="auth-card profile-card">
-        <a className="brand">
-          lumen<span>•</span>
-        </a>
-        <h1>{edit ? 'Edit profile' : user.displayName}</h1>
+      <aside className="sidebar">
+        <Brand />
+        <nav className="primary-nav" aria-label="Main navigation">
+          <button
+            type="button"
+            className="nav-item"
+            onClick={() => {
+              setSelectedProfile('');
+              window.scrollTo({ top: 0, behavior: 'smooth' });
+            }}
+          >
+            <House aria-hidden="true" />
+            <span>Home</span>
+          </button>
+          <button
+            type="button"
+            className="nav-item"
+            onClick={() => document.getElementById('discover-search')?.focus()}
+          >
+            <Search aria-hidden="true" />
+            <span>Discover</span>
+          </button>
+          <button
+            type="button"
+            className={`nav-item ${notificationsOpen ? 'is-active' : ''}`}
+            aria-expanded={notificationsOpen}
+            onClick={() => setNotificationsOpen((open) => !open)}
+          >
+            <Bell aria-hidden="true" />
+            <span>{notificationsOpen ? 'Hide notifications' : 'Notifications'}</span>
+          </button>
+          <button
+            type="button"
+            className={`nav-item ${messagesOpen ? 'is-active' : ''}`}
+            aria-expanded={messagesOpen}
+            onClick={() => setMessagesOpen((open) => !open)}
+          >
+            <MessagesSquare aria-hidden="true" />
+            <span>{messagesOpen ? 'Hide messages' : 'Messages'}</span>
+          </button>
+          <button
+            type="button"
+            className="nav-item"
+            onClick={() => setSelectedProfile(user.username)}
+          >
+            <UserRound aria-hidden="true" />
+            <span>Profile</span>
+          </button>
+          <button
+            type="button"
+            className="nav-item nav-create"
+            aria-expanded={creatingPost}
+            onClick={() => {
+              setPostError('');
+              setCreatingPost((open) => !open);
+            }}
+          >
+            <Plus aria-hidden="true" />
+            <span>{creatingPost ? 'Cancel post' : 'Create post'}</span>
+          </button>
+          <button
+            type="button"
+            className={`nav-item ${requestsOpen ? 'is-active' : ''}`}
+            aria-expanded={requestsOpen}
+            onClick={() => {
+              const open = !requestsOpen;
+              setRequestsOpen(open);
+              if (open) void loadFollowRequests();
+            }}
+          >
+            <UserRound aria-hidden="true" />
+            <span>{requestsOpen ? 'Hide follow requests' : 'Follow requests'}</span>
+          </button>
+        </nav>
+        <div className="sidebar-footer">
+          <Avatar username={user.username} src={user.avatarUrl} />
+          <div className="sidebar-user">
+            <strong>{user.username}</strong>
+            <span>{user.displayName}</span>
+          </div>
+          <IconButton
+            label={loggingOut ? 'Logging out' : 'Log out'}
+            disabled={loggingOut}
+            onClick={() => void logout()}
+          >
+            <LogOut aria-hidden="true" />
+          </IconButton>
+        </div>
+      </aside>
+      <section className="feed-column" id="home">
+        <header className="mobile-header">
+          <Brand />
+        </header>
+        <HomeFeed
+          userId={user.id}
+          refreshKey={feedRefresh}
+          onOpenProfile={setSelectedProfile}
+        />
+      </section>
+      <aside className="right-rail">
+        <section className="profile-card">
+          <div className="account-card-heading">
+            <Avatar username={user.username} src={user.avatarUrl} className="avatar-large" />
+            <div>
+              <h1>{edit ? 'Edit profile' : user.displayName}</h1>
+              <p>@{user.username}</p>
+            </div>
+          </div>
         {edit ? (
           <form onSubmit={save}>
             <label>
@@ -472,18 +640,23 @@ function Profile({ user, setUser }: { user: User; setUser: (user: User | null) =
                 {error}
               </p>
             )}
-            <button disabled={saving}>{saving ? 'Saving…' : 'Save'}</button>
+            <div className="form-actions">
+              <button type="button" className="button-secondary" onClick={() => setEdit(false)}>
+                Cancel
+              </button>
+              <button disabled={saving}>{saving ? 'Saving…' : 'Save'}</button>
+            </div>
           </form>
         ) : (
           <>
-            <p>@{user.username}</p>
-            <p>{user.bio || 'No biography yet.'}</p>
+            <p className="profile-bio">{user.bio || 'No biography yet.'}</p>
             <div className="profile-counts" aria-label="Profile counts">
-              <span>{profileStats?.followerCount ?? '—'} followers</span>
-              <span>{profileStats?.followingCount ?? '—'} following</span>
+              <span><strong>{profileStats?.followerCount ?? '—'}</strong> followers</span>
+              <span><strong>{profileStats?.followingCount ?? '—'}</strong> following</span>
             </div>
             {profileStatsError && <p role="status">{profileStatsError}</p>}
             <button
+              className="button-secondary"
               onClick={() => {
                 setError('');
                 setEdit(true);
@@ -491,77 +664,43 @@ function Profile({ user, setUser }: { user: User; setUser: (user: User | null) =
             >
               Edit profile
             </button>
-            <button
-              onClick={() => {
-                setPostError('');
-                setCreatingPost((open) => !open);
-              }}
-            >
-              {creatingPost ? 'Cancel post' : 'Create post'}
-            </button>
           </>
         )}
-        {!edit && (
-          <>
-            <DiscoverySearch onOpenProfile={setSelectedProfile} />
-            <button
-              type="button"
-              aria-expanded={notificationsOpen}
-              onClick={() => setNotificationsOpen((open) => !open)}
-            >
-              {notificationsOpen ? 'Hide notifications' : 'Notifications'}
-            </button>
-            {notificationsOpen && (
-              <NotificationsPanel onOpenProfile={setSelectedProfile} />
+        </section>
+        {!edit && <DiscoverySearch onOpenProfile={setSelectedProfile} />}
+        {notificationsOpen && (
+          <NotificationsPanel onOpenProfile={setSelectedProfile} />
+        )}
+        {messagesOpen && <MessagesPanel currentUserId={user.id} />}
+        {requestsOpen && (
+          <section className="follow-requests" aria-label="Pending follow requests">
+            <h2>Follow requests</h2>
+            {requestsLoading && <p role="status">Loading follow requests…</p>}
+            {requestsError && <p role="alert">{requestsError}</p>}
+            {!requestsLoading && !requestsError && followRequests.length === 0 && (
+              <p>No pending follow requests.</p>
             )}
-            <button
-              type="button"
-              aria-expanded={messagesOpen}
-              onClick={() => setMessagesOpen((open) => !open)}
-            >
-              {messagesOpen ? 'Hide messages' : 'Messages'}
-            </button>
-            {messagesOpen && <MessagesPanel currentUserId={user.id} />}
-            <button
-              type="button"
-              aria-expanded={requestsOpen}
-              onClick={() => {
-                const open = !requestsOpen;
-                setRequestsOpen(open);
-                if (open) void loadFollowRequests();
-              }}
-            >
-              {requestsOpen ? 'Hide follow requests' : 'Follow requests'}
-            </button>
-            {requestsOpen && (
-              <section className="follow-requests" aria-label="Pending follow requests">
-                {requestsLoading && <p role="status">Loading follow requests…</p>}
-                {requestsError && <p role="alert">{requestsError}</p>}
-                {!requestsLoading && !requestsError && followRequests.length === 0 && (
-                  <p>No pending follow requests.</p>
-                )}
-                {followRequests.map((followRequest) => (
-                  <div className="follow-request" key={followRequest.id}>
-                    <span>@{followRequest.username}</span>
-                    <button
-                      type="button"
-                      disabled={requestActionId !== ''}
-                      onClick={() => void handleFollowRequest(followRequest.id, 'approve')}
-                    >
-                      {requestActionId === followRequest.id ? 'Updating…' : 'Approve'}
-                    </button>
-                    <button
-                      type="button"
-                      disabled={requestActionId !== ''}
-                      onClick={() => void handleFollowRequest(followRequest.id, 'reject')}
-                    >
-                      Reject
-                    </button>
-                  </div>
-                ))}
-              </section>
-            )}
-          </>
+            {followRequests.map((followRequest) => (
+              <div className="follow-request" key={followRequest.id}>
+                <span>@{followRequest.username}</span>
+                <button
+                  type="button"
+                  disabled={requestActionId !== ''}
+                  onClick={() => void handleFollowRequest(followRequest.id, 'approve')}
+                >
+                  {requestActionId === followRequest.id ? 'Updating…' : 'Approve'}
+                </button>
+                <button
+                  type="button"
+                  className="button-secondary"
+                  disabled={requestActionId !== ''}
+                  onClick={() => void handleFollowRequest(followRequest.id, 'reject')}
+                >
+                  Reject
+                </button>
+              </div>
+            ))}
+          </section>
         )}
         {selectedProfile && !edit && (
           <ProfilePage
@@ -576,34 +715,51 @@ function Profile({ user, setUser }: { user: User; setUser: (user: User | null) =
           />
         )}
         {creatingPost && !edit && (
-          <form className="create-post-form" noValidate onSubmit={createPost}>
-            <h2>Create a post</h2>
-            <label>
-              Image
-              <input
-                name="image"
-                type="file"
-                accept="image/jpeg,image/png,image/webp"
-                required
-                onChange={(event) => setImage(event.currentTarget.files?.[0] ?? null)}
-              />
-            </label>
-            {previewUrl && (
-              <img className="post-preview" src={previewUrl} alt="Selected image preview" />
-            )}
-            <label>
-              Caption
-              <textarea name="caption" maxLength={2200} required />
-            </label>
-            {postError && (
-              <p className="form-error" role="alert">
-                {postError}
-              </p>
-            )}
-            <button disabled={uploading || !image}>
-              {uploading ? 'Uploading…' : 'Share post'}
-            </button>
-          </form>
+          <div className="dialog-backdrop" role="presentation" onMouseDown={(event) => {
+            if (event.target === event.currentTarget && !uploading) setCreatingPost(false);
+          }}>
+            <section className="create-post-dialog" role="dialog" aria-modal="true" aria-labelledby="create-post-title">
+              <header>
+                <div>
+                  <p className="eyebrow">SHARE A MOMENT</p>
+                  <h2 id="create-post-title">Create a post</h2>
+                </div>
+                <IconButton label="Close create post" disabled={uploading} onClick={() => setCreatingPost(false)}>
+                  <X aria-hidden="true" />
+                </IconButton>
+              </header>
+              <form className="create-post-form" noValidate onSubmit={createPost}>
+                <label className="upload-dropzone">
+                  <Camera aria-hidden="true" />
+                  <strong>{image ? image.name : 'Choose a photo to share'}</strong>
+                  <span>JPG, PNG or WebP · up to 8 MB</span>
+                  <input
+                    name="image"
+                    type="file"
+                    accept="image/jpeg,image/png,image/webp"
+                    required
+                    aria-label="Image"
+                    onChange={(event) => setImage(event.currentTarget.files?.[0] ?? null)}
+                  />
+                </label>
+                {previewUrl && (
+                  <img className="post-preview" src={previewUrl} alt="Selected image preview" />
+                )}
+                <label>
+                  Caption
+                  <textarea name="caption" maxLength={2200} placeholder="Write a caption…" required />
+                </label>
+                {postError && (
+                  <p className="form-error" role="alert">
+                    {postError}
+                  </p>
+                )}
+                <button disabled={uploading || !image}>
+                  {uploading ? 'Uploading…' : 'Share post'}
+                </button>
+              </form>
+            </section>
+          </div>
         )}
         {createdPost && (
           <section className="created-post" aria-label="Published post">
@@ -616,15 +772,12 @@ function Profile({ user, setUser }: { user: User; setUser: (user: User | null) =
             <p>{createdPost.caption}</p>
           </section>
         )}
-        <button className="link" onClick={logout} disabled={loggingOut}>
-          {loggingOut ? 'Logging out…' : 'Log out'}
-        </button>
         {error && !edit && (
           <p className="form-error" role="alert">
             {error}
           </p>
         )}
-      </section>
+      </aside>
     </main>
   );
 }
@@ -1338,6 +1491,7 @@ function DiscoverySearch({ onOpenProfile }: { onOpenProfile: (username: string) 
           <input
             value={query}
             onChange={(event) => setQuery(event.currentTarget.value)}
+            id="discover-search"
             minLength={2}
             maxLength={30}
             pattern="[a-zA-Z0-9._]+"
@@ -1542,9 +1696,7 @@ function ProfilePage({
       {profile && !loading && (
         <>
           <div className="profile-page-summary">
-            {profile.avatarUrl && (
-              <img className="profile-avatar" src={profile.avatarUrl} alt="" />
-            )}
+            <Avatar username={profile.username} src={profile.avatarUrl} className="profile-avatar" />
             <div>
               {profile.displayName && <h3>{profile.displayName}</h3>}
               {profile.bio && <p>{profile.bio}</p>}
@@ -1844,22 +1996,22 @@ function FeedPostCard({
   return (
     <article className="feed-post">
       <header className="feed-post-header">
-        <div className="feed-avatar" aria-hidden="true">
-          {post.authorUsername.slice(0, 1).toUpperCase()}
+        <Avatar username={post.authorUsername} className="feed-avatar" />
+        <div className="feed-post-meta">
+          <button
+            type="button"
+            className="profile-link"
+            onClick={() => onOpenProfile(post.authorUsername)}
+          >
+            @{post.authorUsername}
+          </button>
+          <time dateTime={post.createdAt}>
+            {new Date(post.createdAt).toLocaleDateString(undefined, {
+              month: 'short',
+              day: 'numeric',
+            })}
+          </time>
         </div>
-        <button
-          type="button"
-          className="profile-link"
-          onClick={() => onOpenProfile(post.authorUsername)}
-        >
-          @{post.authorUsername}
-        </button>
-        <time dateTime={post.createdAt}>
-          {new Date(post.createdAt).toLocaleString(undefined, {
-            dateStyle: 'medium',
-            timeStyle: 'short',
-          })}
-        </time>
       </header>
       <img
         className="feed-post-image"
@@ -1871,7 +2023,14 @@ function FeedPostCard({
         <strong>@{post.authorUsername}</strong> {post.caption}
       </p>
       <div className="feed-post-actions">
-        <button type="button" aria-pressed={liked} disabled={liking} onClick={toggleLike}>
+        <button
+          type="button"
+          className={`post-action ${liked ? 'is-liked' : ''}`}
+          aria-pressed={liked}
+          disabled={liking}
+          onClick={toggleLike}
+        >
+          <Heart aria-hidden="true" fill={liked ? 'currentColor' : 'none'} />
           {liking ? 'Updating like…' : liked ? 'Unlike' : 'Like'}
         </button>
         <span aria-live="polite">
@@ -1879,10 +2038,12 @@ function FeedPostCard({
         </span>
         <button
           type="button"
+          className="post-action"
           aria-expanded={commentsOpen}
           aria-controls={`comments-${post.id}`}
           onClick={toggleComments}
         >
+          <MessageCircle aria-hidden="true" />
           {commentsOpen ? 'Hide comments' : 'Comments'}
         </button>
       </div>

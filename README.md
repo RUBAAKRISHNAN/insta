@@ -1,6 +1,6 @@
-# Lumen Social
+# Rubaagram
 
-Lumen is an original, Instagram-inspired social application with an Express API, a responsive React application, PostgreSQL persistence, authentication, and authenticated post creation.
+Rubaagram is an original, Instagram-inspired social application with an Express API, a responsive React application, PostgreSQL persistence, authentication, and authenticated post creation.
 
 ## Prerequisites
 

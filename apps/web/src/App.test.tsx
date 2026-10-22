@@ -5,9 +5,9 @@ import { App } from './App';
 
 const profile = {
   id: 'user-1',
-  email: 'lumen@example.test',
-  username: 'lumen_user',
-  displayName: 'Lumen User',
+  email: 'user@example.test',
+  username: 'rubaagram_user',
+  displayName: 'Rubaagram User',
   bio: 'Hello there',
   avatarUrl: null,
   isPrivate: false,
@@ -124,8 +124,8 @@ describe('authentication and profile UI', () => {
 
     finishRestore(authenticatedResponse());
 
-    expect(await screen.findByRole('heading', { name: 'Lumen User' })).toBeInTheDocument();
-    expect(screen.getByText('@lumen_user')).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Rubaagram User' })).toBeInTheDocument();
+    expect(screen.getByText('@rubaagram_user')).toBeInTheDocument();
   });
 
   it('shows the sign-in form for an unauthenticated session', async () => {
@@ -153,7 +153,7 @@ describe('authentication and profile UI', () => {
 
     await user.click(screen.getByRole('button', { name: 'Retry' }));
 
-    expect(await screen.findByRole('heading', { name: 'Lumen User' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Rubaagram User' })).toBeInTheDocument();
     expect(
       fetchMock.mock.calls.filter(([input]) => String(input).endsWith('/auth/me')),
     ).toHaveLength(2);
@@ -175,7 +175,7 @@ describe('authentication and profile UI', () => {
     await user.type(screen.getByLabelText('Password'), 'Secure-password-123!');
     await user.click(screen.getByRole('button', { name: 'Create account' }));
 
-    expect(await screen.findByRole('heading', { name: 'Lumen User' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Rubaagram User' })).toBeInTheDocument();
     const registrationCall = fetchMock.mock.calls.find(([input]) =>
       String(input).endsWith('/auth/register'),
     );
@@ -226,7 +226,7 @@ describe('authentication and profile UI', () => {
     await user.type(screen.getByLabelText('Password'), 'Secure-password-123!');
     await user.click(screen.getByRole('button', { name: 'Sign in' }));
 
-    expect(await screen.findByRole('heading', { name: 'Lumen User' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Rubaagram User' })).toBeInTheDocument();
     expect(fetchMock.mock.calls.some(([input]) => String(input).endsWith('/auth/login'))).toBe(
       true,
     );
@@ -253,7 +253,7 @@ describe('authentication and profile UI', () => {
     expect(screen.getByRole('button', { name: 'Please wait…' })).toBeDisabled();
     finishLogin(authenticatedResponse());
 
-    expect(await screen.findByRole('heading', { name: 'Lumen User' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Rubaagram User' })).toBeInTheDocument();
   });
 
   it('shows a safe login error when the API rejects credentials', async () => {
@@ -292,13 +292,13 @@ describe('authentication and profile UI', () => {
     await user.click(await screen.findByRole('button', { name: 'Edit profile' }));
     const displayName = screen.getByLabelText('Display name');
     await user.clear(displayName);
-    await user.type(displayName, 'Updated Lumen');
+    await user.type(displayName, 'Updated Rubaagram');
     const bio = screen.getByLabelText('Bio');
     await user.clear(bio);
     await user.type(bio, 'Updated biography');
     await user.click(screen.getByRole('button', { name: 'Save' }));
 
-    expect(await screen.findByRole('heading', { name: 'Updated Lumen' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Updated Rubaagram' })).toBeInTheDocument();
     expect(screen.getByText('Updated biography')).toBeInTheDocument();
   });
 
@@ -359,7 +359,7 @@ describe('authentication and profile UI', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent(
       'The service is temporarily unavailable. Please try again later.',
     );
-    expect(screen.getByRole('heading', { name: 'Lumen User' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Rubaagram User' })).toBeInTheDocument();
     expect(screen.queryByText(/internal session store details/i)).not.toBeInTheDocument();
   });
 
@@ -791,7 +791,7 @@ describe('authentication and profile UI', () => {
     });
     render(<App />);
 
-    await screen.findByRole('heading', { name: 'Lumen User' });
+    await screen.findByRole('heading', { name: 'Rubaagram User' });
     await user.type(screen.getByLabelText('Search usernames'), 'private_user');
     await user.click(screen.getByRole('button', { name: 'Search' }));
     await user.click(await screen.findByRole('button', { name: /@private_user/ }));
@@ -836,7 +836,7 @@ describe('authentication and profile UI', () => {
         requests = requests.filter((item) => item.id !== 'requester-2');
         return new Response(null, { status: 204 });
       }
-      if (url.endsWith('/users?username=lumen_user')) {
+      if (url.endsWith('/users?username=rubaagram_user')) {
         return jsonResponse({
           data: {
             user: {
@@ -856,7 +856,7 @@ describe('authentication and profile UI', () => {
     });
     render(<App />);
 
-    await screen.findByRole('heading', { name: 'Lumen User' });
+    await screen.findByRole('heading', { name: 'Rubaagram User' });
     await user.click(screen.getByRole('button', { name: 'Follow requests' }));
     expect(await screen.findByText('@waiting_user')).toBeInTheDocument();
     await user.click(
@@ -936,7 +936,7 @@ describe('authentication and profile UI', () => {
     });
     render(<App />);
 
-    await screen.findByRole('heading', { name: 'Lumen User' });
+    await screen.findByRole('heading', { name: 'Rubaagram User' });
     await user.type(screen.getByLabelText('Search usernames'), 'public_user');
     await user.click(screen.getByRole('button', { name: 'Search' }));
     await user.click(await screen.findByRole('button', { name: /@public_user/ }));
@@ -1036,7 +1036,7 @@ describe('authentication and profile UI', () => {
     });
     render(<App />);
 
-    await screen.findByRole('heading', { name: 'Lumen User' });
+    await screen.findByRole('heading', { name: 'Rubaagram User' });
     await user.type(screen.getByLabelText('Search usernames'), 'discover');
     await user.click(screen.getByRole('button', { name: 'Search' }));
     expect(await screen.findByText('@discover_a')).toBeInTheDocument();
@@ -1115,7 +1115,7 @@ describe('authentication and profile UI', () => {
     });
     render(<App />);
 
-    await screen.findByRole('heading', { name: 'Lumen User' });
+    await screen.findByRole('heading', { name: 'Rubaagram User' });
     await user.type(screen.getByLabelText('Search usernames'), 'private');
     await user.click(screen.getByRole('button', { name: 'Search' }));
     await user.click(await screen.findByRole('button', { name: /@private_person/ }));
@@ -1178,7 +1178,7 @@ describe('authentication and profile UI', () => {
     });
     render(<App />);
 
-    await screen.findByRole('heading', { name: 'Lumen User' });
+    await screen.findByRole('heading', { name: 'Rubaagram User' });
     await user.type(screen.getByLabelText('Search usernames'), 'nobody');
     await user.click(screen.getByRole('button', { name: 'Search' }));
     expect(await screen.findByRole('alert')).toHaveTextContent(
@@ -1229,7 +1229,7 @@ describe('authentication and profile UI', () => {
     });
     render(<App />);
 
-    await screen.findByRole('heading', { name: 'Lumen User' });
+    await screen.findByRole('heading', { name: 'Rubaagram User' });
     await user.type(screen.getByLabelText('Search usernames'), 'loading');
     await user.click(screen.getByRole('button', { name: 'Search' }));
     expect(screen.getByRole('status')).toHaveTextContent('Searching profiles');
@@ -1305,7 +1305,7 @@ describe('authentication and profile UI', () => {
     });
 
     render(<App />);
-    await screen.findByRole('heading', { name: 'Lumen User' });
+    await screen.findByRole('heading', { name: 'Rubaagram User' });
     await user.click(screen.getByRole('button', { name: 'Notifications' }));
     expect(await screen.findByText('@sunny_user')).toBeInTheDocument();
     expect(screen.getByText('liked your post.')).toBeInTheDocument();
@@ -1360,7 +1360,7 @@ describe('authentication and profile UI', () => {
     });
 
     render(<App />);
-    await screen.findByRole('heading', { name: 'Lumen User' });
+    await screen.findByRole('heading', { name: 'Rubaagram User' });
     await user.click(screen.getByRole('button', { name: 'Notifications' }));
     expect(screen.getByRole('status')).toHaveTextContent('Loading notifications');
     finishNotifications(jsonResponse({ data: { notifications: [], nextCursor: null } }));
@@ -1463,7 +1463,7 @@ describe('authentication and profile UI', () => {
       throw new Error(`Unexpected request: ${String(input)}`);
     });
     render(<App />);
-    await screen.findByRole('heading', { name: 'Lumen User' });
+    await screen.findByRole('heading', { name: 'Rubaagram User' });
     await user.click(screen.getByRole('button', { name: 'Messages' }));
     await user.click(await screen.findByRole('button', { name: /@message_sender/ }));
     expect(await screen.findByText('Hello there.')).toBeInTheDocument();
@@ -1577,7 +1577,7 @@ describe('authentication and profile UI', () => {
       throw new Error(`Unexpected request: ${String(input)}`);
     });
     render(<App />);
-    await screen.findByRole('heading', { name: 'Lumen User' });
+    await screen.findByRole('heading', { name: 'Rubaagram User' });
     await user.click(screen.getByRole('button', { name: 'Messages' }));
     await user.type(screen.getByLabelText('Message username'), 'Target_User');
     await user.type(
@@ -1643,7 +1643,7 @@ describe('authentication and profile UI', () => {
       throw new Error(`Unexpected request: ${String(input)}`);
     });
     render(<App />);
-    await screen.findByRole('heading', { name: 'Lumen User' });
+    await screen.findByRole('heading', { name: 'Rubaagram User' });
     await user.click(screen.getByRole('button', { name: 'Messages' }));
     expect(screen.getByRole('status')).toHaveTextContent('Loading inbox');
     finishInbox(
