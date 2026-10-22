@@ -17,6 +17,7 @@ import type {
   ProfileSummary,
   UserDiscoveryResponse,
 } from '@lumen/shared';
+import { resolveApiBaseUrl } from './api-base-url.js';
 import './auth.css';
 
 type User = {
@@ -35,7 +36,7 @@ type ApiErrorBody = {
   };
 };
 
-const api = import.meta.env.VITE_API_URL || 'http://localhost:4000/api';
+const api = resolveApiBaseUrl(import.meta.env.PROD, import.meta.env.VITE_API_URL);
 const mutationMethods = new Set(['POST', 'PATCH', 'PUT', 'DELETE']);
 const safeMessages: Record<string, string> = {
   ACCOUNT_EXISTS: 'An account with those details already exists.',

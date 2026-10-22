@@ -19,6 +19,25 @@ npm run dev
 
 The web application runs on `http://localhost:5173`; the API runs on `http://localhost:4000`.
 
+Local API defaults remain available for development. In production, set `NODE_ENV=production`, `DATABASE_URL` to a non-local PostgreSQL URL, and `WEB_ORIGIN` to the exact HTTPS frontend origin (without a path). Production frontend builds require `VITE_API_URL`; use `/api` when routing API requests through the frontend origin, or an HTTPS API URL ending in `/api`. `VITE_` values are compiled into public browser assets and must never contain secrets.
+
+## Deployment (Vercel + Render)
+
+Keep the Vercel project root set to the repository root. The root `vercel.mjs` config builds the shared workspace and Vite frontend, sets the public frontend API base to `/api`, proxies `/api/*` to the configured Render API origin, then falls back to `index.html` for client-side routes. Configure `RENDER_API_ORIGIN` as the Render service's HTTPS origin in Vercel for each deployment environment. Do not include a path, credentials, or a trailing slash. The config rejects local and Vercel origins and compares the target against Vercel's deployment domains to help prevent accidental rewrite loops.
+
+Create the Render API service with the repository root as its working directory and these commands:
+
+```text
+Build: npm ci && npm run build -w @lumen/shared && npm run build -w @lumen/api
+Start: npm run start -w @lumen/api
+```
+
+Set `NODE_ENV=production`, `DATABASE_URL` to the separately provisioned production PostgreSQL database, and `WEB_ORIGIN` to the exact canonical deployed Vercel origin (for example, `https://your-project.vercel.app`, with no path or trailing slash). Because API CORS and CSRF checks allow one exact origin, redirect any alternate frontend domains to that canonical origin. Render supplies `PORT`; do not hard-code it. Preview deployments need a matching exact API origin configuration or should not be used for authenticated flows; do not use a wildcard origin.
+
+Before deploying, provision a separate hosted database and verify its identity. Apply the existing migrations with `npm run db:migrate` only after explicitly setting `DATABASE_URL` to that target and confirming it is not a development database. Do not put database credentials in Vercel configuration or source control.
+
+The current image adapter writes to local disk. Render's free service filesystem is not durable across service restarts or redeploys, so uploaded images may be lost; this deployment setup does not add persistent storage. Recheck current Vercel, Render, and PostgreSQL provider limits before launch.
+
 ## Database
 
 Set `DATABASE_URL` in `apps/api/.env` to the dedicated local development database, then apply the checked-in migration lineage:

@@ -1,6 +1,10 @@
 import 'dotenv/config';
-import { z } from 'zod';
-const envSchema = z.object({ NODE_ENV: z.enum(['development', 'test', 'production']).default('development'), PORT: z.coerce.number().int().min(1).max(65535).default(4000), WEB_ORIGIN: z.string().url().default('http://localhost:5173'), DATABASE_URL: z.string().url().startsWith('postgresql://').optional(), IMAGE_STORAGE: z.enum(['local']).default('local'), IMAGE_UPLOAD_DIR: z.string().min(1).optional() });
-const result = envSchema.safeParse(process.env);
-if (!result.success) { console.error('Invalid environment configuration:', result.error.flatten().fieldErrors); throw new Error('Invalid environment configuration'); }
+import { parseApiEnvironment } from './env-validation.js';
+
+const result = parseApiEnvironment(process.env);
+if (!result.success) {
+  const invalidFields = [...new Set(result.error.issues.map((issue) => issue.path[0]))];
+  console.error('Invalid environment configuration fields:', invalidFields);
+  throw new Error('Invalid environment configuration.');
+}
 export const env = result.data;
