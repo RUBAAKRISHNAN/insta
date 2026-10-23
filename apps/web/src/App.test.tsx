@@ -1839,7 +1839,7 @@ describe('authentication and profile UI', () => {
 });
 
 describe('protected routes', () => {
-  it('sends signed-out visitors to log in and returns them to the requested page', async () => {
+  it('shows a login popup on a page opened while signed out and reveals it after login', async () => {
     const user = userEvent.setup();
     window.history.replaceState(null, '', '/rubaagram_user');
     let signedIn = false;
@@ -1857,17 +1857,48 @@ describe('protected routes', () => {
     });
     render(<App />);
 
-    expect(await screen.findByRole('heading', { name: 'Log in' })).toBeInTheDocument();
-    expect(window.location.pathname).toBe('/accounts/login');
-    expect(new URLSearchParams(window.location.search).get('next')).toBe('/rubaagram_user');
+    const popup = await screen.findByRole('dialog', { name: 'See more from rubaagram_user' });
+    expect(window.location.pathname).toBe('/rubaagram_user');
     expect(screen.queryByRole('navigation', { name: 'Main navigation' })).not.toBeInTheDocument();
 
-    await user.type(screen.getByLabelText('Email'), profile.email);
-    await user.type(screen.getByLabelText('Password'), 'Secure-password-123!');
-    await user.click(screen.getByRole('button', { name: 'Log in' }));
+    await user.type(within(popup).getByLabelText('Email'), profile.email);
+    await user.type(within(popup).getByLabelText('Password'), 'Secure-password-123!');
+    await user.click(within(popup).getByRole('button', { name: 'Log in' }));
 
     expect(await screen.findByRole('heading', { name: 'rubaagram_user' })).toBeInTheDocument();
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
     expect(window.location.pathname).toBe('/rubaagram_user');
+  });
+
+  it('sends sign-ups from the popup back to the requested page', async () => {
+    const user = userEvent.setup();
+    window.history.replaceState(null, '', '/direct/inbox');
+    mockFetch(async (input) => {
+      if (String(input).endsWith('/auth/me')) return unauthenticatedResponse();
+      throw new Error(`Unexpected request: ${String(input)}`);
+    });
+    render(<App />);
+
+    const popup = await screen.findByRole('dialog', { name: 'Log in to see your messages' });
+    await user.click(within(popup).getByRole('button', { name: 'Sign up' }));
+    expect(window.location.pathname).toBe('/accounts/signup');
+    expect(new URLSearchParams(window.location.search).get('next')).toBe('/direct/inbox');
+    expect(screen.getByLabelText('Full name')).toBeInTheDocument();
+  });
+
+  it('shows the login popup when the session expires on an app page', async () => {
+    window.history.replaceState(null, '', '/someone_else');
+    mockFetch(async (input) => {
+      if (String(input).endsWith('/auth/me')) return authenticatedResponse();
+      if (String(input).includes('/users?username=')) return unauthenticatedResponse();
+      throw new Error(`Unexpected request: ${String(input)}`);
+    });
+    render(<App />);
+
+    expect(
+      await screen.findByRole('dialog', { name: 'See more from someone_else' }),
+    ).toBeInTheDocument();
+    expect(window.location.pathname).toBe('/someone_else');
   });
 
   it('gives sign-up its own address and keeps signed-in users off the login page', async () => {

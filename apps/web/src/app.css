@@ -3372,3 +3372,152 @@ img {
   height: 260px;
   border-radius: 4px;
 }
+
+/* ------------------------------------------------------------------
+   Login popup for signed-out visitors to app pages
+   ------------------------------------------------------------------ */
+
+.login-wall {
+  position: relative;
+  min-height: 100vh;
+  overflow: hidden;
+}
+
+.login-wall-preview {
+  display: flex;
+  min-height: 100vh;
+  filter: blur(6px);
+  opacity: 0.7;
+  pointer-events: none;
+  user-select: none;
+}
+
+.login-wall-rail {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  align-items: center;
+  gap: 34px;
+  width: var(--sidebar-narrow);
+  padding-top: 32px;
+  border-right: 1px solid var(--separator);
+  color: var(--text);
+}
+
+.login-wall-rail svg {
+  width: 24px;
+  height: 24px;
+}
+
+.login-wall-content {
+  flex: 1;
+  max-width: 935px;
+  margin: 0 auto;
+  padding: 40px 20px;
+}
+
+.login-wall-header {
+  display: flex;
+  align-items: center;
+  gap: 48px;
+  padding: 0 0 44px 60px;
+}
+
+.login-wall-avatar {
+  width: 150px;
+  height: 150px;
+}
+
+.login-wall-lines {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.login-wall-lines .skeleton-line {
+  width: 240px;
+  height: 14px;
+}
+
+.login-wall-lines .skeleton-line.short {
+  width: 160px;
+}
+
+.login-wall-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 4px;
+}
+
+.login-wall-grid .skeleton {
+  aspect-ratio: 3 / 4;
+}
+
+.login-wall-backdrop {
+  position: fixed;
+  background: rgb(0 0 0 / 55%);
+}
+
+.login-popup {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 400px;
+  max-width: calc(100vw - 32px);
+  padding: 32px 40px 24px;
+  text-align: center;
+}
+
+.login-popup-wordmark {
+  font-size: 44px;
+  margin-bottom: 18px;
+}
+
+.login-popup h2 {
+  margin: 0 0 6px;
+  font-size: 18px;
+  line-height: 24px;
+  font-weight: 700;
+}
+
+.login-popup-subtitle {
+  margin: 0 0 22px;
+  color: var(--text-secondary);
+}
+
+.login-popup-switch {
+  width: 100%;
+  margin: 20px 0 0;
+  padding-top: 18px;
+  border-top: 1px solid var(--separator);
+}
+
+@media (max-width: 767px) {
+  .login-wall-rail {
+    display: none;
+  }
+
+  .login-wall-header {
+    gap: 24px;
+    padding: 0 0 24px;
+  }
+
+  .login-wall-avatar {
+    width: 77px;
+    height: 77px;
+  }
+
+  .login-wall-lines .skeleton-line {
+    width: 140px;
+  }
+
+  .login-popup {
+    height: auto;
+    border-radius: 12px;
+    padding: 28px 24px 20px;
+  }
+
+  .modal-backdrop.login-wall-backdrop {
+    padding: 16px;
+  }
+}

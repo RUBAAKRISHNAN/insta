@@ -610,23 +610,23 @@ function postLoginPath() {
   return isAuthPath(new URL(next, window.location.origin).pathname) ? '/' : next;
 }
 
-/** Signed-out visitors may only see the login and sign-up pages. */
+/**
+ * Signed-out visitors to the home page get the full login page. Any other app page keeps
+ * its address and shows a login popup on top (see LoginWall), so signing in lands there.
+ */
 function redirectToLogin() {
-  const { pathname, search } = window.location;
-  if (isAuthPath(pathname)) return;
-  const requested = `${pathname}${search}`;
-  const query = requested === '/' ? '' : `?${new URLSearchParams({ next: requested })}`;
-  window.history.replaceState(null, '', `${loginPath}${query}`);
+  const path = window.location.pathname.replace(/\/+$/, '') || '/';
+  if (path === '/') window.history.replaceState(null, '', loginPath);
 }
 
 function Root() {
   const [user, setUserState] = useState<User | null>(null);
   const [restoreState, setRestoreState] = useState<RestoreState>('loading');
   const [restoreAttempt, setRestoreAttempt] = useState(0);
+  const [, setLocationVersion] = useState(0);
   const theme = useTheme();
 
-  // Keep the URL in step with the session: signed-in users never sit on the
-  // login page, and signed-out users never stay on an app page.
+  // Keep the URL in step with the session: signed-in users never sit on the login page.
   const setUser = useCallback((next: User | null) => {
     if (next && isAuthPath(window.location.pathname)) {
       window.history.replaceState(null, '', postLoginPath());
@@ -634,6 +634,14 @@ function Root() {
     if (!next) redirectToLogin();
     setUserState(next);
   }, []);
+
+  // While signed out, back/forward moves between the login page and the login popup.
+  useEffect(() => {
+    if (user) return;
+    const onPopState = () => setLocationVersion((version) => version + 1);
+    window.addEventListener('popstate', onPopState);
+    return () => window.removeEventListener('popstate', onPopState);
+  }, [user]);
 
   useEffect(() => {
     sessionExpiredHandler = () => setUser(null);
@@ -709,6 +717,23 @@ function Root() {
     return <Shell user={user} setUser={setUser} theme={theme.theme} toggleTheme={theme.toggle} />;
   }
 
+  if (!isAuthPath(window.location.pathname)) {
+    return (
+      <LoginWall
+        onAuthenticated={setUser}
+        onSignUp={() => {
+          const requested = `${window.location.pathname}${window.location.search}`;
+          window.history.pushState(
+            null,
+            '',
+            `${signupPath}?${new URLSearchParams({ next: requested })}`,
+          );
+          setLocationVersion((version) => version + 1);
+        }}
+      />
+    );
+  }
+
   return <AuthPage onAuthenticated={setUser} />;
 }
 
@@ -763,7 +788,6 @@ function AuthPage({ onAuthenticated }: { onAuthenticated: (user: User) => void }
     () => window.location.pathname.replace(/\/+$/, '') === signupPath,
   );
   const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState('');
 
   useEffect(() => {
     const onPopState = () =>
@@ -776,34 +800,6 @@ function AuthPage({ onAuthenticated }: { onAuthenticated: (user: User) => void }
     // Keep ?next= so signing up still returns to the page that was requested.
     window.history.pushState(null, '', `${next ? signupPath : loginPath}${window.location.search}`);
     setRegisterState(next);
-  }
-
-  async function submit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    setError('');
-    setSubmitting(true);
-    const form = new FormData(event.currentTarget);
-    const values = register
-      ? {
-          username: form.get('username'),
-          displayName: form.get('displayName'),
-          email: form.get('email'),
-          password: form.get('password'),
-        }
-      : { email: form.get('email'), password: form.get('password') };
-
-    try {
-      const response = await request<AuthResponse>(register ? '/auth/register' : '/auth/login', {
-        method: 'POST',
-        body: JSON.stringify(values),
-      });
-      onAuthenticated(response.data.user);
-    } catch (submitError) {
-      setError(
-        userErrorMessage(submitError, 'The request could not be completed. Please try again.'),
-      );
-      setSubmitting(false);
-    }
   }
 
   return (
@@ -836,41 +832,12 @@ function AuthPage({ onAuthenticated }: { onAuthenticated: (user: User) => void }
           <h1 className={register ? 'auth-title' : 'sr-only'}>
             {register ? 'Sign up to see photos and videos from your friends.' : 'Log in'}
           </h1>
-          <form className="auth-form" onSubmit={submit} noValidate={false}>
-            <AuthField label="Email" name="email" type="email" autoComplete="email" />
-            <AuthField
-              label="Password"
-              name="password"
-              type="password"
-              minLength={register ? 12 : 1}
-              maxLength={128}
-              autoComplete={register ? 'new-password' : 'current-password'}
-            />
-            {register && (
-              <>
-                <AuthField label="Full name" name="displayName" maxLength={80} autoComplete="name" />
-                <AuthField
-                  label="Username"
-                  name="username"
-                  minLength={3}
-                  maxLength={30}
-                  autoComplete="username"
-                />
-                <p className="auth-fineprint">
-                  Passwords need at least 12 characters. Usernames can use letters, numbers,
-                  periods and underscores.
-                </p>
-              </>
-            )}
-            <button className="btn btn-primary btn-block" disabled={submitting}>
-              {submitting ? <Spinner label="Please wait…" /> : register ? 'Sign up' : 'Log in'}
-            </button>
-            {error && (
-              <p className="auth-error" role="alert">
-                {error}
-              </p>
-            )}
-          </form>
+          <AuthForm
+            key={register ? 'signup' : 'login'}
+            register={register}
+            onAuthenticated={onAuthenticated}
+            onSubmittingChange={setSubmitting}
+          />
         </section>
         <section className="auth-box auth-switch">
           <p>
@@ -879,10 +846,7 @@ function AuthPage({ onAuthenticated }: { onAuthenticated: (user: User) => void }
               type="button"
               className="link-button"
               disabled={submitting}
-              onClick={() => {
-                setError('');
-                setRegister(!register);
-              }}
+              onClick={() => setRegister(!register)}
             >
               {register ? 'Log in' : 'Sign up'}
             </button>
@@ -890,6 +854,179 @@ function AuthPage({ onAuthenticated }: { onAuthenticated: (user: User) => void }
         </section>
       </div>
     </main>
+  );
+}
+
+function AuthForm({
+  register,
+  onAuthenticated,
+  onSubmittingChange,
+}: {
+  register: boolean;
+  onAuthenticated: (user: User) => void;
+  onSubmittingChange?: (submitting: boolean) => void;
+}) {
+  const [submitting, setSubmittingState] = useState(false);
+  const [error, setError] = useState('');
+
+  function setSubmitting(next: boolean) {
+    setSubmittingState(next);
+    onSubmittingChange?.(next);
+  }
+
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setError('');
+    setSubmitting(true);
+    const form = new FormData(event.currentTarget);
+    const values = register
+      ? {
+          username: form.get('username'),
+          displayName: form.get('displayName'),
+          email: form.get('email'),
+          password: form.get('password'),
+        }
+      : { email: form.get('email'), password: form.get('password') };
+
+    try {
+      const response = await request<AuthResponse>(register ? '/auth/register' : '/auth/login', {
+        method: 'POST',
+        body: JSON.stringify(values),
+      });
+      onAuthenticated(response.data.user);
+    } catch (submitError) {
+      setError(
+        userErrorMessage(submitError, 'The request could not be completed. Please try again.'),
+      );
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <form className="auth-form" onSubmit={submit}>
+      <AuthField label="Email" name="email" type="email" autoComplete="email" />
+      <AuthField
+        label="Password"
+        name="password"
+        type="password"
+        minLength={register ? 12 : 1}
+        maxLength={128}
+        autoComplete={register ? 'new-password' : 'current-password'}
+      />
+      {register && (
+        <>
+          <AuthField label="Full name" name="displayName" maxLength={80} autoComplete="name" />
+          <AuthField
+            label="Username"
+            name="username"
+            minLength={3}
+            maxLength={30}
+            autoComplete="username"
+          />
+          <p className="auth-fineprint">
+            Passwords need at least 12 characters. Usernames can use letters, numbers, periods
+            and underscores.
+          </p>
+        </>
+      )}
+      <button className="btn btn-primary btn-block" disabled={submitting}>
+        {submitting ? <Spinner label="Please wait…" /> : register ? 'Sign up' : 'Log in'}
+      </button>
+      {error && (
+        <p className="auth-error" role="alert">
+          {error}
+        </p>
+      )}
+    </form>
+  );
+}
+
+function loginWallTitle(route: Route) {
+  switch (route.name) {
+    case 'profile':
+      return `See more from ${route.username}`;
+    case 'inbox':
+      return 'Log in to see your messages';
+    case 'edit':
+      return 'Log in to edit your profile';
+    case 'home':
+      return 'Log in to Rubaagram';
+  }
+}
+
+/**
+ * Shown when a signed-out visitor opens an app page directly (a new window or browser
+ * profile): the page stays in the address bar behind a login popup, and signing in
+ * reveals it — like Instagram's "Log in to continue" dialog.
+ */
+function LoginWall({
+  onAuthenticated,
+  onSignUp,
+}: {
+  onAuthenticated: (user: User) => void;
+  onSignUp: () => void;
+}) {
+  const route = parseRoute(window.location.pathname);
+  const [submitting, setSubmitting] = useState(false);
+  useBodyScrollLock(true);
+
+  return (
+    <div className="login-wall">
+      <div className="login-wall-preview" aria-hidden="true">
+        <aside className="login-wall-rail">
+          <Camera />
+          <House />
+          <Search />
+          <Send />
+          <Heart />
+          <SquarePlus />
+        </aside>
+        <div className="login-wall-content">
+          <div className="login-wall-header">
+            <span className="skeleton skeleton-circle login-wall-avatar" />
+            <div className="login-wall-lines">
+              <span className="skeleton skeleton-line" />
+              <span className="skeleton skeleton-line short" />
+            </div>
+          </div>
+          <div className="login-wall-grid">
+            {Array.from({ length: 9 }, (_, index) => (
+              <span key={index} className="skeleton" />
+            ))}
+          </div>
+        </div>
+      </div>
+      <div className="modal-backdrop login-wall-backdrop" role="presentation">
+        <section
+          className="modal login-popup"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="login-popup-title"
+        >
+          <Wordmark className="login-popup-wordmark" />
+          <h2 id="login-popup-title">{loginWallTitle(route)}</h2>
+          <p className="login-popup-subtitle">
+            Log in to see photos and videos from your friends.
+          </p>
+          <AuthForm
+            register={false}
+            onAuthenticated={onAuthenticated}
+            onSubmittingChange={setSubmitting}
+          />
+          <p className="login-popup-switch">
+            Don't have an account?{' '}
+            <button
+              type="button"
+              className="link-button"
+              disabled={submitting}
+              onClick={onSignUp}
+            >
+              Sign up
+            </button>
+          </p>
+        </section>
+      </div>
+    </div>
   );
 }
 
