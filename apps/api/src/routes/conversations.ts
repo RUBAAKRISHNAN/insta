@@ -204,6 +204,14 @@ router.get('/', (req, res, next) => {
             else ${conversations.participantLowId}
           end
         )`,
+        avatarUrl: sql<string | null>`(
+          select ${users.avatarUrl} from ${users}
+          where ${users.id} = case
+            when ${conversations.participantLowId} = ${userId}
+            then ${conversations.participantHighId}
+            else ${conversations.participantLowId}
+          end
+        )`,
         unreadCount: sql<number>`(
           select count(*)::int from ${messages}
           where ${messages.conversationId} = ${conversations.id}
@@ -232,6 +240,7 @@ router.get('/', (req, res, next) => {
         id: conversation.id,
         username: conversation.username,
         displayName: conversation.displayName,
+        avatarUrl: conversation.avatarUrl,
         requestStatus: conversation.requestStatus,
         requestedByMe: conversation.requestedById === userId,
         lastMessageAt: conversation.lastMessageAt,

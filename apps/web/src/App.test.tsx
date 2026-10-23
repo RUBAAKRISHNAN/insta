@@ -9,7 +9,7 @@ const profile = {
   username: 'rubaagram_user',
   displayName: 'Rubaagram User',
   bio: 'Hello there',
-  avatarUrl: null,
+  avatarUrl: null as string | null,
   isPrivate: false,
 };
 
@@ -75,20 +75,49 @@ async function openSignedOutApp(user = userEvent.setup()) {
     throw new Error(`Unexpected request: ${String(input)}`);
   });
   render(<App />);
-  await screen.findByRole('heading', { name: 'Welcome back' });
+  await screen.findByRole('heading', { name: 'Log in' });
   return user;
 }
 
+const ownProfileSummary = {
+  username: profile.username,
+  displayName: profile.displayName,
+  bio: profile.bio,
+  avatarUrl: null,
+  isPrivate: false,
+  followState: 'none',
+  followerCount: 0,
+  followingCount: 0,
+};
+
+/** Matches a profile stat such as "3 followers", whose number is rendered in its own element. */
+function stat(text: string) {
+  return (_content: string, element: Element | null) =>
+    element?.tagName === 'LI' && element.textContent === text;
+}
+
 beforeEach(() => {
+  window.history.replaceState(null, '', '/');
   fetchMock = vi.fn<typeof fetch>();
   feedFetchImplementation = undefined;
   commentsFetchImplementation = undefined;
   vi.stubGlobal('fetch', ((input: RequestInfo | URL, init?: RequestInit) => {
     const url = new URL(String(input), window.location.href);
-    if (url.pathname.endsWith('/api/posts') && (init?.method ?? 'GET').toUpperCase() === 'GET') {
+    const method = (init?.method ?? 'GET').toUpperCase();
+    if (url.pathname.endsWith('/api/posts') && method === 'GET') {
       return feedFetchImplementation
         ? feedFetchImplementation(input, init)
         : Promise.resolve(feedResponse());
+    }
+    if (
+      method === 'GET' &&
+      url.pathname.endsWith('/api/users') &&
+      url.searchParams.get('username') === profile.username
+    ) {
+      return Promise.resolve(jsonResponse({ data: { user: ownProfileSummary } }));
+    }
+    if (method === 'GET' && url.pathname.endsWith(`/api/users/${profile.username}/posts`)) {
+      return Promise.resolve(feedResponse());
     }
     if (
       url.pathname.includes('/comments') &&
@@ -124,8 +153,8 @@ describe('authentication and profile UI', () => {
 
     finishRestore(authenticatedResponse());
 
-    expect(await screen.findByRole('heading', { name: 'Rubaagram User' })).toBeInTheDocument();
-    expect(screen.getByText('@rubaagram_user')).toBeInTheDocument();
+    expect(await screen.findByText('Rubaagram User')).toBeInTheDocument();
+    expect(screen.getByText('rubaagram_user')).toBeInTheDocument();
   });
 
   it('shows the sign-in form for an unauthenticated session', async () => {
@@ -153,7 +182,7 @@ describe('authentication and profile UI', () => {
 
     await user.click(screen.getByRole('button', { name: 'Retry' }));
 
-    expect(await screen.findByRole('heading', { name: 'Rubaagram User' })).toBeInTheDocument();
+    expect(await screen.findByText('Rubaagram User')).toBeInTheDocument();
     expect(
       fetchMock.mock.calls.filter(([input]) => String(input).endsWith('/auth/me')),
     ).toHaveLength(2);
@@ -168,14 +197,14 @@ describe('authentication and profile UI', () => {
       throw new Error(`Unexpected request: ${url}`);
     });
 
-    await user.click(screen.getByRole('button', { name: 'Create an account' }));
+    await user.click(screen.getByRole('button', { name: 'Sign up' }));
     await user.type(screen.getByLabelText('Username'), profile.username);
-    await user.type(screen.getByLabelText('Display name'), profile.displayName);
+    await user.type(screen.getByLabelText('Full name'), profile.displayName);
     await user.type(screen.getByLabelText('Email'), profile.email);
     await user.type(screen.getByLabelText('Password'), 'Secure-password-123!');
-    await user.click(screen.getByRole('button', { name: 'Create account' }));
+    await user.click(screen.getByRole('button', { name: 'Sign up' }));
 
-    expect(await screen.findByRole('heading', { name: 'Rubaagram User' })).toBeInTheDocument();
+    expect(await screen.findByText('Rubaagram User')).toBeInTheDocument();
     const registrationCall = fetchMock.mock.calls.find(([input]) =>
       String(input).endsWith('/auth/register'),
     );
@@ -200,12 +229,12 @@ describe('authentication and profile UI', () => {
       throw new Error(`Unexpected request: ${url}`);
     });
 
-    await user.click(screen.getByRole('button', { name: 'Create an account' }));
+    await user.click(screen.getByRole('button', { name: 'Sign up' }));
     await user.type(screen.getByLabelText('Username'), profile.username);
-    await user.type(screen.getByLabelText('Display name'), profile.displayName);
+    await user.type(screen.getByLabelText('Full name'), profile.displayName);
     await user.type(screen.getByLabelText('Email'), profile.email);
     await user.type(screen.getByLabelText('Password'), 'Secure-password-123!');
-    await user.click(screen.getByRole('button', { name: 'Create account' }));
+    await user.click(screen.getByRole('button', { name: 'Sign up' }));
 
     expect(await screen.findByRole('alert')).toHaveTextContent(
       'An account with those details already exists.',
@@ -224,9 +253,9 @@ describe('authentication and profile UI', () => {
 
     await user.type(screen.getByLabelText('Email'), profile.email);
     await user.type(screen.getByLabelText('Password'), 'Secure-password-123!');
-    await user.click(screen.getByRole('button', { name: 'Sign in' }));
+    await user.click(screen.getByRole('button', { name: 'Log in' }));
 
-    expect(await screen.findByRole('heading', { name: 'Rubaagram User' })).toBeInTheDocument();
+    expect(await screen.findByText('Rubaagram User')).toBeInTheDocument();
     expect(fetchMock.mock.calls.some(([input]) => String(input).endsWith('/auth/login'))).toBe(
       true,
     );
@@ -248,12 +277,12 @@ describe('authentication and profile UI', () => {
 
     await user.type(screen.getByLabelText('Email'), profile.email);
     await user.type(screen.getByLabelText('Password'), 'Secure-password-123!');
-    await user.click(screen.getByRole('button', { name: 'Sign in' }));
+    await user.click(screen.getByRole('button', { name: 'Log in' }));
 
     expect(screen.getByRole('button', { name: 'Please wait…' })).toBeDisabled();
     finishLogin(authenticatedResponse());
 
-    expect(await screen.findByRole('heading', { name: 'Rubaagram User' })).toBeInTheDocument();
+    expect(await screen.findByText('Rubaagram User')).toBeInTheDocument();
   });
 
   it('shows a safe login error when the API rejects credentials', async () => {
@@ -269,7 +298,7 @@ describe('authentication and profile UI', () => {
 
     await user.type(screen.getByLabelText('Email'), profile.email);
     await user.type(screen.getByLabelText('Password'), 'wrong-password');
-    await user.click(screen.getByRole('button', { name: 'Sign in' }));
+    await user.click(screen.getByRole('button', { name: 'Log in' }));
 
     expect(await screen.findByRole('alert')).toHaveTextContent('Email or password is incorrect.');
     expect(screen.queryByText(/sensitive authentication diagnostic/i)).not.toBeInTheDocument();
@@ -289,17 +318,65 @@ describe('authentication and profile UI', () => {
     });
     render(<App />);
 
+    await user.click(await screen.findByRole('button', { name: 'Profile' }));
     await user.click(await screen.findByRole('button', { name: 'Edit profile' }));
-    const displayName = screen.getByLabelText('Display name');
+    expect(window.location.pathname).toBe('/accounts/edit');
+    const displayName = screen.getByLabelText('Name');
     await user.clear(displayName);
     await user.type(displayName, 'Updated Rubaagram');
     const bio = screen.getByLabelText('Bio');
     await user.clear(bio);
     await user.type(bio, 'Updated biography');
-    await user.click(screen.getByRole('button', { name: 'Save' }));
+    await user.click(screen.getByRole('button', { name: 'Submit' }));
 
-    expect(await screen.findByRole('heading', { name: 'Updated Rubaagram' })).toBeInTheDocument();
-    expect(screen.getByText('Updated biography')).toBeInTheDocument();
+    expect(await screen.findByText('Profile saved.')).toBeInTheDocument();
+    expect(screen.getByText('Updated Rubaagram')).toBeInTheDocument();
+    expect(screen.getByLabelText('Bio')).toHaveValue('Updated biography');
+  });
+
+  it('uploads and removes a profile photo', async () => {
+    const user = userEvent.setup();
+    const avatarPath = '/users/avatars/88888888-8888-4888-8888-888888888888.png';
+    mockFetch(async (input, init) => {
+      const url = String(input);
+      if (url.endsWith('/auth/me')) return authenticatedResponse();
+      if (url.endsWith('/csrf')) return csrfResponse();
+      if (url.endsWith('/users/me/avatar') && init?.method === 'POST') {
+        return authenticatedResponse({ ...profile, avatarUrl: avatarPath });
+      }
+      if (url.endsWith('/users/me/avatar') && init?.method === 'DELETE') {
+        return authenticatedResponse({ ...profile, avatarUrl: null });
+      }
+      throw new Error(`Unexpected request: ${url}`);
+    });
+    const { container } = render(<App />);
+
+    await user.click(await screen.findByRole('button', { name: 'Profile' }));
+    await user.click(await screen.findByRole('button', { name: 'Edit profile' }));
+    expect(screen.queryByLabelText('Avatar URL')).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Change photo' }));
+    const dialog = screen.getByRole('dialog', { name: 'Change profile photo' });
+    expect(within(dialog).queryByRole('button', { name: 'Remove current photo' })).toBeNull();
+    await user.upload(
+      within(dialog).getByLabelText('Profile photo'),
+      new window.File(['image bytes'], 'me.png', { type: 'image/png' }),
+    );
+
+    expect(await screen.findByText('Profile photo updated.')).toBeInTheDocument();
+    const upload = fetchMock.mock.calls.find(
+      ([input, init]) => String(input).endsWith('/users/me/avatar') && init?.method === 'POST',
+    );
+    expect((upload?.[1]?.body as FormData).get('image')).toMatchObject({ name: 'me.png' });
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(container.querySelector('.edit-card img')).toHaveAttribute(
+      'src',
+      `http://localhost:4000/api${avatarPath}`,
+    );
+
+    await user.click(screen.getByRole('button', { name: 'Change photo' }));
+    await user.click(screen.getByRole('button', { name: 'Remove current photo' }));
+    expect(await screen.findByText('Profile photo removed.')).toBeInTheDocument();
+    expect(container.querySelector('.edit-card img')).toBeNull();
   });
 
   it('shows a safe profile update error and keeps the edit form open', async () => {
@@ -315,8 +392,9 @@ describe('authentication and profile UI', () => {
     });
     render(<App />);
 
+    await user.click(await screen.findByRole('button', { name: 'Profile' }));
     await user.click(await screen.findByRole('button', { name: 'Edit profile' }));
-    await user.click(screen.getByRole('button', { name: 'Save' }));
+    await user.click(screen.getByRole('button', { name: 'Submit' }));
 
     expect(await screen.findByRole('alert')).toHaveTextContent(
       'The service is temporarily unavailable. Please try again later.',
@@ -336,9 +414,10 @@ describe('authentication and profile UI', () => {
     });
     render(<App />);
 
-    await user.click(await screen.findByRole('button', { name: 'Log out' }));
+    await user.click(await screen.findByRole('button', { name: 'More' }));
+    await user.click(screen.getByRole('menuitem', { name: 'Log out' }));
 
-    expect(await screen.findByRole('heading', { name: 'Welcome back' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Log in' })).toBeInTheDocument();
   });
 
   it('shows logout failures and keeps the authenticated profile visible', async () => {
@@ -354,12 +433,13 @@ describe('authentication and profile UI', () => {
     });
     render(<App />);
 
-    await user.click(await screen.findByRole('button', { name: 'Log out' }));
+    await user.click(await screen.findByRole('button', { name: 'More' }));
+    await user.click(screen.getByRole('menuitem', { name: 'Log out' }));
 
     expect(await screen.findByRole('alert')).toHaveTextContent(
       'The service is temporarily unavailable. Please try again later.',
     );
-    expect(screen.getByRole('heading', { name: 'Rubaagram User' })).toBeInTheDocument();
+    expect(screen.getByText('Rubaagram User')).toBeInTheDocument();
     expect(screen.queryByText(/internal session store details/i)).not.toBeInTheDocument();
   });
 
@@ -372,7 +452,7 @@ describe('authentication and profile UI', () => {
 
     await user.type(screen.getByLabelText('Email'), profile.email);
     await user.type(screen.getByLabelText('Password'), 'Secure-password-123!');
-    await user.click(screen.getByRole('button', { name: 'Sign in' }));
+    await user.click(screen.getByRole('button', { name: 'Log in' }));
 
     expect(await screen.findByRole('alert')).toHaveTextContent(
       'Unable to reach the service. Check your connection and try again.',
@@ -396,7 +476,7 @@ describe('authentication and profile UI', () => {
     });
     render(<App />);
 
-    await user.click(await screen.findByRole('button', { name: 'Create post' }));
+    await user.click(await screen.findByRole('button', { name: 'Create' }));
     const file = new window.File(['image bytes'], 'sunset.png', { type: 'image/png' });
     await user.upload(screen.getByLabelText('Image'), file);
     expect(screen.getByRole('img', { name: 'Selected image preview' })).toHaveAttribute(
@@ -431,7 +511,7 @@ describe('authentication and profile UI', () => {
         201,
       ),
     );
-    expect(await screen.findByText('Post published.')).toBeInTheDocument();
+    expect(await screen.findByText('Your post has been shared.')).toBeInTheDocument();
     expect(screen.getByRole('img', { name: 'Your published post' })).toHaveAttribute(
       'src',
       'http://localhost:4000/api/posts/post-1/image',
@@ -451,7 +531,7 @@ describe('authentication and profile UI', () => {
     });
     render(<App />);
 
-    await user.click(await screen.findByRole('button', { name: 'Create post' }));
+    await user.click(await screen.findByRole('button', { name: 'Create' }));
     await user.upload(
       screen.getByLabelText('Image'),
       new window.File(['image bytes'], 'photo.png', { type: 'image/png' }),
@@ -485,7 +565,7 @@ describe('authentication and profile UI', () => {
     await waitFor(() => expect(finishFeed).toBeTypeOf('function'));
     finishFeed(feedResponse([feedPost]));
     expect(await screen.findByText('A sunny afternoon')).toBeInTheDocument();
-    expect(screen.getAllByText('@sunny_user')).toHaveLength(2);
+    expect(screen.getAllByText('sunny_user')).toHaveLength(2);
     expect(screen.getByRole('time')).toHaveAttribute('dateTime', feedPost.createdAt);
     expect(screen.getByRole('img', { name: 'Post by @sunny_user' })).toHaveAttribute(
       'src',
@@ -650,11 +730,12 @@ describe('authentication and profile UI', () => {
     render(<App />);
 
     await screen.findByText('A sunny afternoon');
-    await user.click(screen.getByRole('button', { name: 'Comments' }));
-    expect(await screen.findByText('No comments yet.')).toBeInTheDocument();
-    await user.type(screen.getByLabelText('Add a comment'), 'My new comment');
-    await user.click(screen.getByRole('button', { name: 'Post comment' }));
-    expect(await screen.findByText('My new comment')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'View comments' }));
+    const viewer = await screen.findByRole('dialog', { name: 'Post by sunny_user' });
+    expect(await within(viewer).findByText('No comments yet.')).toBeInTheDocument();
+    await user.type(within(viewer).getByLabelText('Add a comment'), 'My new comment');
+    await user.click(within(viewer).getByRole('button', { name: 'Post comment' }));
+    expect(await within(viewer).findByText('My new comment')).toBeInTheDocument();
     const commentRequest = fetchMock.mock.calls.find(
       ([input, init]) =>
         String(input).endsWith(`/posts/${feedPost.id}/comments`) && init?.method === 'POST',
@@ -663,10 +744,12 @@ describe('authentication and profile UI', () => {
       /^[0-9a-f-]{36}$/i,
     );
     expect(
-      screen.getByRole('button', { name: 'Delete comment by @sunny_user' }),
+      within(viewer).getByRole('button', { name: 'Delete comment by @sunny_user' }),
     ).toBeInTheDocument();
-    await user.click(screen.getByRole('button', { name: 'Delete comment by @sunny_user' }));
-    expect(screen.queryByText('My new comment')).not.toBeInTheDocument();
+    await user.click(
+      within(viewer).getByRole('button', { name: 'Delete comment by @sunny_user' }),
+    );
+    expect(within(viewer).queryByText('My new comment')).not.toBeInTheDocument();
   });
 
   it('shows comment loading, API failure, and retry states', async () => {
@@ -692,7 +775,7 @@ describe('authentication and profile UI', () => {
     render(<App />);
 
     await screen.findByText('A sunny afternoon');
-    await user.click(screen.getByRole('button', { name: 'Comments' }));
+    await user.click(screen.getByRole('button', { name: 'View comments' }));
     expect(
       within(screen.getByRole('region', { name: 'Comments' })).getByRole('status'),
     ).toHaveTextContent('Loading comments');
@@ -726,12 +809,13 @@ describe('authentication and profile UI', () => {
     render(<App />);
 
     await screen.findByText('A sunny afternoon');
-    await user.click(screen.getByRole('button', { name: 'Comments' }));
-    await screen.findByText('No comments yet.');
-    await user.type(screen.getByLabelText('Add a comment'), 'Only once');
-    await user.click(screen.getByRole('button', { name: 'Post comment' }));
-    expect(screen.getByRole('button', { name: 'Posting comment…' })).toBeDisabled();
-    await user.click(screen.getByRole('button', { name: 'Posting comment…' }));
+    await user.click(screen.getByRole('button', { name: 'View comments' }));
+    const viewer = await screen.findByRole('dialog', { name: 'Post by sunny_user' });
+    await within(viewer).findByText('No comments yet.');
+    await user.type(within(viewer).getByLabelText('Add a comment'), 'Only once');
+    await user.click(within(viewer).getByRole('button', { name: 'Post comment' }));
+    expect(within(viewer).getByRole('button', { name: 'Posting comment…' })).toBeDisabled();
+    await user.click(within(viewer).getByRole('button', { name: 'Posting comment…' }));
     const commentRequests = fetchMock.mock.calls.filter(
       ([input, init]) =>
         String(input).endsWith(`/posts/${feedPost.id}/comments`) && init?.method === 'POST',
@@ -740,6 +824,50 @@ describe('authentication and profile UI', () => {
 
     finishComment(jsonResponse({ data: { comment: { ...comment, text: 'Only once' } } }, 201));
     expect(await screen.findByText('Only once')).toBeInTheDocument();
+  });
+
+  it('shows author photos and lists comments written from the feed under the caption', async () => {
+    const user = userEvent.setup();
+    const avatarPath = '/users/avatars/99999999-9999-4999-8999-999999999999.png';
+    mockFetch(async (input, init) => {
+      const url = String(input);
+      if (url.endsWith('/auth/me')) return authenticatedResponse();
+      if (url.endsWith('/csrf')) return csrfResponse();
+      if (url.endsWith(`/posts/${feedPost.id}/comments`) && init?.method === 'POST') {
+        return jsonResponse(
+          {
+            data: {
+              comment: {
+                ...comment,
+                authorId: profile.id,
+                authorUsername: profile.username,
+                text: 'Lovely light 😍',
+              },
+            },
+          },
+          201,
+        );
+      }
+      throw new Error(`Unexpected request: ${url}`);
+    });
+    feedFetchImplementation = () =>
+      Promise.resolve(feedResponse([{ ...feedPost, authorAvatarUrl: avatarPath }]));
+    const { container } = render(<App />);
+
+    await screen.findByText('A sunny afternoon');
+    expect(container.querySelector('.post-header img')).toHaveAttribute(
+      'src',
+      `http://localhost:4000/api${avatarPath}`,
+    );
+    await user.type(screen.getByLabelText('Add a comment'), 'Lovely light ');
+    await user.click(screen.getByRole('button', { name: 'Emoji' }));
+    await user.click(screen.getByRole('button', { name: 'Insert 😍' }));
+    expect(screen.getByLabelText('Add a comment')).toHaveValue('Lovely light 😍');
+    await user.click(screen.getByRole('button', { name: 'Post comment' }));
+
+    expect(await screen.findByText('Lovely light 😍')).toBeInTheDocument();
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(screen.getByLabelText('Add a comment')).toHaveValue('');
   });
 
   it('shows a private profile request state and lets the viewer cancel it', async () => {
@@ -791,14 +919,15 @@ describe('authentication and profile UI', () => {
     });
     render(<App />);
 
-    await screen.findByRole('heading', { name: 'Rubaagram User' });
-    await user.type(screen.getByLabelText('Search usernames'), 'private_user');
+    await screen.findByText('Rubaagram User');
     await user.click(screen.getByRole('button', { name: 'Search' }));
-    await user.click(await screen.findByRole('button', { name: /@private_user/ }));
-    expect(await screen.findByText('Private account')).toBeInTheDocument();
-    expect(screen.getAllByText('@private_user')).toHaveLength(2);
+    await user.type(screen.getByLabelText('Search usernames'), 'private_user');
+    await user.click(await screen.findByRole('button', { name: /private_user/ }));
+    expect(await screen.findByText('This account is private')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'private_user' })).toBeInTheDocument();
+    expect(window.location.pathname).toBe('/private_user');
     expect(
-      within(screen.getByRole('region', { name: '@private_user' })).queryByText('0 followers'),
+      within(screen.getByRole('region', { name: 'private_user' })).queryByText(stat('0 followers')),
     ).not.toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: 'Follow @private_user' }));
@@ -808,7 +937,9 @@ describe('authentication and profile UI', () => {
     await user.click(
       screen.getByRole('button', { name: 'Cancel follow request to @private_user' }),
     );
-    expect(screen.getByRole('button', { name: 'Follow @private_user' })).toBeInTheDocument();
+    expect(
+      await screen.findByRole('button', { name: 'Follow @private_user' }),
+    ).toBeInTheDocument();
     const followMutations = fetchMock.mock.calls.filter(([input]) =>
       String(input).endsWith('/users/private_user/follow'),
     );
@@ -827,6 +958,9 @@ describe('authentication and profile UI', () => {
       if (url.endsWith('/csrf')) return csrfResponse();
       if (url.endsWith('/users/me/follow-requests') && init?.method !== 'PUT') {
         return jsonResponse({ data: { requests } });
+      }
+      if (url.includes('/notifications?')) {
+        return jsonResponse({ data: { notifications: [], nextCursor: null } });
       }
       if (url.endsWith('/users/follow-requests/requester-1/approve')) {
         requests = requests.filter((item) => item.id !== 'requester-1');
@@ -856,17 +990,20 @@ describe('authentication and profile UI', () => {
     });
     render(<App />);
 
-    await screen.findByRole('heading', { name: 'Rubaagram User' });
+    await screen.findByText('Rubaagram User');
+    await user.click(screen.getByRole('button', { name: 'Notifications' }));
     await user.click(screen.getByRole('button', { name: 'Follow requests' }));
-    expect(await screen.findByText('@waiting_user')).toBeInTheDocument();
+    expect(await screen.findByText('waiting_user')).toBeInTheDocument();
     await user.click(
       within(screen.getByRole('region', { name: 'Pending follow requests' })).getAllByRole(
         'button',
-        { name: 'Approve' },
+        { name: 'Confirm' },
       )[0],
     );
-    expect(await screen.findByText('@declined_user')).toBeInTheDocument();
-    await user.click(screen.getByRole('button', { name: 'Reject' }));
+    expect(await screen.findByText('declined_user')).toBeInTheDocument();
+    await waitFor(() => expect(screen.queryByText('waiting_user')).not.toBeInTheDocument());
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Delete' })).toBeEnabled());
+    await user.click(screen.getByRole('button', { name: 'Delete' }));
     expect(await screen.findByText('No pending follow requests.')).toBeInTheDocument();
     const approval = fetchMock.mock.calls.find(([input]) =>
       String(input).endsWith('/users/follow-requests/requester-1/approve'),
@@ -936,19 +1073,23 @@ describe('authentication and profile UI', () => {
     });
     render(<App />);
 
-    await screen.findByRole('heading', { name: 'Rubaagram User' });
-    await user.type(screen.getByLabelText('Search usernames'), 'public_user');
+    await screen.findByText('Rubaagram User');
     await user.click(screen.getByRole('button', { name: 'Search' }));
-    await user.click(await screen.findByRole('button', { name: /@public_user/ }));
-    expect(await screen.findByText('3 followers')).toBeInTheDocument();
+    await user.type(screen.getByLabelText('Search usernames'), 'public_user');
+    await user.click(await screen.findByRole('button', { name: /public_user/ }));
+    expect(await screen.findByText(stat('3 followers'))).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Follow @public_user' }));
-    expect(await screen.findByText('4 followers')).toBeInTheDocument();
+    expect(await screen.findByText(stat('4 followers'))).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Unfollow @public_user' })).toHaveTextContent(
       'Following',
     );
     await user.click(screen.getByRole('button', { name: 'Unfollow @public_user' }));
-    expect(await screen.findByText('3 followers')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Follow @public_user' })).toBeInTheDocument();
+    const dialog = await screen.findByRole('dialog', { name: 'Unfollow @public_user?' });
+    await user.click(within(dialog).getByRole('button', { name: 'Unfollow' }));
+    expect(await screen.findByText(stat('3 followers'))).toBeInTheDocument();
+    expect(
+      await screen.findByRole('button', { name: 'Follow @public_user' }),
+    ).toBeInTheDocument();
   });
 
   it('searches users with paginated results and opens a profile page with its posts', async () => {
@@ -1036,10 +1177,10 @@ describe('authentication and profile UI', () => {
     });
     render(<App />);
 
-    await screen.findByRole('heading', { name: 'Rubaagram User' });
-    await user.type(screen.getByLabelText('Search usernames'), 'discover');
+    await screen.findByText('Rubaagram User');
     await user.click(screen.getByRole('button', { name: 'Search' }));
-    expect(await screen.findByText('@discover_a')).toBeInTheDocument();
+    await user.type(screen.getByLabelText('Search usernames'), 'discover');
+    expect(await screen.findByText('discover_a')).toBeInTheDocument();
     const firstSearch = fetchMock.mock.calls.find(([input]) =>
       String(input).includes('/users/discover?'),
     );
@@ -1047,19 +1188,19 @@ describe('authentication and profile UI', () => {
     expect(firstSearch?.[1]?.credentials).toBe('include');
 
     await user.click(screen.getByRole('button', { name: 'Load more profiles' }));
-    expect(await screen.findByText('@discover_b')).toBeInTheDocument();
+    expect(await screen.findByText('discover_b')).toBeInTheDocument();
     const nextSearch = fetchMock.mock.calls.find(([input]) =>
       String(input).includes('cursor=discovery-cursor'),
     );
     expect(nextSearch).toBeDefined();
 
-    await user.click(screen.getByRole('button', { name: /@discover_b/ }));
-    expect(await screen.findByRole('heading', { name: '@discover_b' })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: /discover_b/ }));
+    expect(await screen.findByRole('heading', { name: 'discover_b' })).toBeInTheDocument();
     expect(screen.getByText('A discoverable bio')).toBeInTheDocument();
-    expect(screen.getByText('3 followers')).toBeInTheDocument();
-    expect(screen.getByText('A sunny afternoon')).toBeInTheDocument();
+    expect(screen.getByText(stat('3 followers'))).toBeInTheDocument();
+    expect(await screen.findByRole('img', { name: 'A sunny afternoon' })).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Load more posts' }));
-    expect(await screen.findByText('Next profile post')).toBeInTheDocument();
+    expect(await screen.findByRole('img', { name: 'Next profile post' })).toBeInTheDocument();
   });
 
   it('keeps private profile details and posts hidden, with an explicit pending state', async () => {
@@ -1115,10 +1256,10 @@ describe('authentication and profile UI', () => {
     });
     render(<App />);
 
-    await screen.findByRole('heading', { name: 'Rubaagram User' });
-    await user.type(screen.getByLabelText('Search usernames'), 'private');
+    await screen.findByText('Rubaagram User');
     await user.click(screen.getByRole('button', { name: 'Search' }));
-    await user.click(await screen.findByRole('button', { name: /@private_person/ }));
+    await user.type(screen.getByLabelText('Search usernames'), 'private');
+    await user.click(await screen.findByRole('button', { name: /private_person/ }));
     expect(await screen.findByText('This account is private')).toBeInTheDocument();
     expect(screen.getByText('Follow this account to see its posts.')).toBeInTheDocument();
     expect(
@@ -1126,7 +1267,7 @@ describe('authentication and profile UI', () => {
     ).toHaveTextContent('Requested');
     expect(screen.queryByText('Private biography')).not.toBeInTheDocument();
     expect(
-      within(screen.getByRole('region', { name: '@private_person' })).queryByText('0 followers'),
+      within(screen.getByRole('region', { name: 'private_person' })).queryByText(stat('0 followers')),
     ).not.toBeInTheDocument();
     expect(
       fetchMock.mock.calls.some(([input]) => String(input).endsWith('/users/private_person/posts')),
@@ -1178,9 +1319,9 @@ describe('authentication and profile UI', () => {
     });
     render(<App />);
 
-    await screen.findByRole('heading', { name: 'Rubaagram User' });
-    await user.type(screen.getByLabelText('Search usernames'), 'nobody');
+    await screen.findByText('Rubaagram User');
     await user.click(screen.getByRole('button', { name: 'Search' }));
+    await user.type(screen.getByLabelText('Search usernames'), 'nobody');
     expect(await screen.findByRole('alert')).toHaveTextContent(
       'The service is temporarily unavailable. Please try again later.',
     );
@@ -1190,8 +1331,7 @@ describe('authentication and profile UI', () => {
 
     await user.clear(screen.getByLabelText('Search usernames'));
     await user.type(screen.getByLabelText('Search usernames'), 'missing');
-    await user.click(screen.getByRole('button', { name: 'Search' }));
-    await user.click(await screen.findByRole('button', { name: /@missing_user/ }));
+    await user.click(await screen.findByRole('button', { name: /missing_user/ }));
     expect(await screen.findByRole('alert')).toHaveTextContent('Profile not found.');
     expect(screen.getByRole('button', { name: 'Retry profile' })).toBeInTheDocument();
     expect(screen.queryByText(/private database detail/i)).not.toBeInTheDocument();
@@ -1229,10 +1369,10 @@ describe('authentication and profile UI', () => {
     });
     render(<App />);
 
-    await screen.findByRole('heading', { name: 'Rubaagram User' });
-    await user.type(screen.getByLabelText('Search usernames'), 'loading');
+    await screen.findByText('Rubaagram User');
     await user.click(screen.getByRole('button', { name: 'Search' }));
-    expect(screen.getByRole('status')).toHaveTextContent('Searching profiles');
+    await user.type(screen.getByLabelText('Search usernames'), 'loading');
+    expect(await screen.findByText('Searching profiles…')).toBeInTheDocument();
     await waitFor(() => expect(finishDiscovery).toBeTypeOf('function'));
     finishDiscovery(
       jsonResponse({
@@ -1305,9 +1445,9 @@ describe('authentication and profile UI', () => {
     });
 
     render(<App />);
-    await screen.findByRole('heading', { name: 'Rubaagram User' });
+    await screen.findByText('Rubaagram User');
     await user.click(screen.getByRole('button', { name: 'Notifications' }));
-    expect(await screen.findByText('@sunny_user')).toBeInTheDocument();
+    expect(await screen.findByText('sunny_user')).toBeInTheDocument();
     expect(screen.getByText('liked your post.')).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'View post' })).toHaveAttribute(
       'href',
@@ -1360,13 +1500,13 @@ describe('authentication and profile UI', () => {
     });
 
     render(<App />);
-    await screen.findByRole('heading', { name: 'Rubaagram User' });
+    await screen.findByText('Rubaagram User');
     await user.click(screen.getByRole('button', { name: 'Notifications' }));
-    expect(screen.getByRole('status')).toHaveTextContent('Loading notifications');
+    expect(screen.getByText('Loading notifications…')).toBeInTheDocument();
     finishNotifications(jsonResponse({ data: { notifications: [], nextCursor: null } }));
     expect(await screen.findByText('You have no notifications yet.')).toBeInTheDocument();
 
-    await user.click(screen.getByRole('button', { name: 'Hide notifications' }));
+    await user.click(screen.getByRole('button', { name: 'Notifications' }));
     await user.click(screen.getByRole('button', { name: 'Notifications' }));
     expect(await screen.findByRole('alert')).toHaveTextContent('temporarily unavailable');
     expect(screen.queryByText('Internal details must remain hidden.')).not.toBeInTheDocument();
@@ -1463,13 +1603,14 @@ describe('authentication and profile UI', () => {
       throw new Error(`Unexpected request: ${String(input)}`);
     });
     render(<App />);
-    await screen.findByRole('heading', { name: 'Rubaagram User' });
+    await screen.findByText('Rubaagram User');
     await user.click(screen.getByRole('button', { name: 'Messages' }));
-    await user.click(await screen.findByRole('button', { name: /@message_sender/ }));
+    await user.click(await screen.findByRole('tab', { name: 'Requests (1)' }));
+    await user.click(await screen.findByRole('button', { name: /message_sender/ }));
     expect(await screen.findByText('Hello there.')).toBeInTheDocument();
-    await user.click(screen.getByRole('button', { name: 'Accept request' }));
-    await user.type(await screen.findByLabelText('Message (up to 2,000 characters)'), 'Thanks!');
-    await user.click(screen.getByRole('button', { name: 'Send message' }));
+    await user.click(screen.getByRole('button', { name: 'Accept' }));
+    await user.type(await screen.findByLabelText('Message'), 'Thanks!');
+    await user.click(screen.getByRole('button', { name: 'Send' }));
     expect(screen.getByRole('button', { name: 'Sending…' })).toBeDisabled();
     await user.click(screen.getByRole('button', { name: 'Sending…' }));
     expect(messagePosts).toBe(1);
@@ -1577,14 +1718,15 @@ describe('authentication and profile UI', () => {
       throw new Error(`Unexpected request: ${String(input)}`);
     });
     render(<App />);
-    await screen.findByRole('heading', { name: 'Rubaagram User' });
+    await screen.findByText('Rubaagram User');
     await user.click(screen.getByRole('button', { name: 'Messages' }));
-    await user.type(screen.getByLabelText('Message username'), 'Target_User');
+    await user.click(screen.getByRole('button', { name: 'New message' }));
+    await user.type(screen.getByLabelText('Recipient username'), 'Target_User');
     await user.type(
-      screen.getByLabelText('First message or message to send'),
+      screen.getByLabelText('First message'),
       '  Hello!  ',
     );
-    await user.click(screen.getByRole('button', { name: 'Open or start conversation' }));
+    await user.click(screen.getByRole('button', { name: 'Chat' }));
     expect(await screen.findByText('Waiting for the recipient to accept your message request.')).toBeInTheDocument();
     expect(await screen.findByText('Hello!')).toBeInTheDocument();
   });
@@ -1643,9 +1785,9 @@ describe('authentication and profile UI', () => {
       throw new Error(`Unexpected request: ${String(input)}`);
     });
     render(<App />);
-    await screen.findByRole('heading', { name: 'Rubaagram User' });
+    await screen.findByText('Rubaagram User');
     await user.click(screen.getByRole('button', { name: 'Messages' }));
-    expect(screen.getByRole('status')).toHaveTextContent('Loading inbox');
+    expect(screen.getByText('Loading inbox…')).toBeInTheDocument();
     finishInbox(
       jsonResponse({
         data: {
@@ -1664,12 +1806,12 @@ describe('authentication and profile UI', () => {
         },
       }),
     );
-    expect(await screen.findByRole('button', { name: /@first_user/ })).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: /first_user/ })).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Load more conversations' }));
     expect(await screen.findByRole('alert')).toHaveTextContent('temporarily unavailable');
     expect(screen.queryByText('Internal details must remain hidden.')).not.toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Retry conversations' }));
-    expect(await screen.findByRole('button', { name: /@second_user/ })).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: /second_user/ })).toBeInTheDocument();
     expect(cursorRequests).toBe(2);
   });
 });

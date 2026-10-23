@@ -1,11 +1,14 @@
 import crypto from 'node:crypto';
 import { Router, type Request, type Response } from 'express';
 import rateLimit from 'express-rate-limit';
+import { fileTypeFromBuffer } from 'file-type';
+import multer from 'multer';
 import { and, count, desc, eq, gt, ilike, isNull, lt, or, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import { postFeedResponseSchema, userDiscoveryResponseSchema, usernameSchema } from '@lumen/shared';
 import { getDb } from '../db/client.js';
 import { follows, notifications, posts, sessions, users } from '../db/schema/index.js';
+import { imageStorage } from '../storage/image-storage.js';
 import { visibleAccount } from './visibility.js';
 
 const router = Router();
@@ -20,6 +23,30 @@ const followLimiter = rateLimit({
   limit: 40,
   standardHeaders: true,
   legacyHeaders: false,
+});
+const avatarLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+const maxAvatarBytes = 8 * 1024 * 1024;
+const avatarTypes = {
+  'image/jpeg': 'jpg',
+  'image/png': 'png',
+  'image/webp': 'webp',
+} as const;
+const avatarContentTypes: Record<string, string> = {
+  jpg: 'image/jpeg',
+  png: 'image/png',
+  webp: 'image/webp',
+};
+const avatarPathPrefix = '/users/avatars/';
+const avatarKeyPattern =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\.(jpg|png|webp)$/;
+const avatarUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: maxAvatarBytes, files: 1, fields: 0, parts: 1 },
 });
 const hash = (value: string) => crypto.createHash('sha256').update(value).digest('hex');
 const profileInput = z
@@ -250,6 +277,7 @@ router.get('/me/follow-requests', followLimiter, async (req, res, next) => {
         id: users.id,
         username: users.username,
         displayName: users.displayName,
+        avatarUrl: users.avatarUrl,
         createdAt: follows.createdAt,
       })
       .from(follows)
@@ -511,6 +539,7 @@ router.get('/:username/posts', async (req, res, next) => {
         createdAt: sql<string>`to_char(${posts.createdAt} AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')`,
         authorId: users.id,
         authorUsername: users.username,
+        authorAvatarUrl: users.avatarUrl,
         likeCount: sql<number>`(select count(*)::int from post_likes where post_id = ${posts.id})`,
         likedByMe: sql<boolean>`exists (select 1 from post_likes where post_id = ${posts.id} and user_id = ${viewer.id})`,
       })
@@ -532,6 +561,131 @@ router.get('/:username/posts', async (req, res, next) => {
           : null,
     });
     res.json({ data: response });
+  } catch (error) {
+    next(error);
+  }
+});
+
+/** Storage key of an avatar uploaded through this API, if the URL points at one. */
+function uploadedAvatarKey(avatarUrl: string | null) {
+  if (!avatarUrl?.startsWith(avatarPathPrefix)) return undefined;
+  const key = avatarUrl.slice(avatarPathPrefix.length);
+  return avatarKeyPattern.test(key) ? key : undefined;
+}
+
+async function removeStoredAvatar(avatarUrl: string | null) {
+  const key = uploadedAvatarKey(avatarUrl);
+  if (!key) return;
+  try {
+    await imageStorage.remove(key);
+  } catch (error) {
+    console.error(
+      JSON.stringify({
+        level: 'error',
+        event: 'avatar_cleanup_failed',
+        message: error instanceof Error ? error.message : 'Unknown error',
+      }),
+    );
+  }
+}
+
+function runAvatarUpload(req: Request, res: Response): Promise<void> {
+  return new Promise((resolve, reject) => {
+    avatarUpload.single('image')(req, res, (error: unknown) => {
+      if (error instanceof multer.MulterError) {
+        if (error.code === 'LIMIT_FILE_SIZE') {
+          sendError(res, 413, 'UPLOAD_TOO_LARGE', 'Profile photos must be 8 MB or smaller.');
+        } else {
+          sendError(res, 400, 'INVALID_UPLOAD', 'Select one image.');
+        }
+        resolve();
+        return;
+      }
+      if (error) {
+        reject(error);
+        return;
+      }
+      resolve();
+    });
+  });
+}
+
+const profileColumns = {
+  id: users.id,
+  email: users.email,
+  username: users.username,
+  displayName: users.displayName,
+  bio: users.bio,
+  avatarUrl: users.avatarUrl,
+  isPrivate: users.isPrivate,
+};
+
+router.get('/avatars/:key', async (req, res, next) => {
+  try {
+    const key = req.params.key;
+    if (!avatarKeyPattern.test(key)) return sendError(res, 404, 'NOT_FOUND', 'Photo not found.');
+    const image = await imageStorage.read(key);
+    if (!image) return sendError(res, 404, 'NOT_FOUND', 'Photo not found.');
+    const extension = key.slice(key.lastIndexOf('.') + 1);
+    res
+      .type(avatarContentTypes[extension])
+      .set('X-Content-Type-Options', 'nosniff')
+      .set('Cache-Control', 'public, max-age=31536000, immutable')
+      .send(image);
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.post('/me/avatar', avatarLimiter, async (req, res, next) => {
+  try {
+    const db = getDb();
+    if (!db) return sendError(res, 503, 'UNAVAILABLE', 'Service unavailable.');
+    const viewer = await current(req.cookies?.lumen_session);
+    if (!viewer) return sendError(res, 401, 'UNAUTHENTICATED', 'Authentication required.');
+    await runAvatarUpload(req, res);
+    if (res.headersSent) return;
+    if (!req.file) return sendError(res, 400, 'INVALID_UPLOAD', 'Choose a photo to upload.');
+
+    const detected = await fileTypeFromBuffer(req.file.buffer);
+    if (!detected || !Object.hasOwn(avatarTypes, detected.mime)) {
+      return sendError(res, 415, 'INVALID_UPLOAD', 'Use a JPEG, PNG, or WebP image.');
+    }
+    const extension = avatarTypes[detected.mime as keyof typeof avatarTypes];
+    const key = `${crypto.randomUUID()}.${extension}`;
+    await imageStorage.put(key, req.file.buffer);
+
+    let updatedUser;
+    try {
+      [updatedUser] = await db
+        .update(users)
+        .set({ avatarUrl: `${avatarPathPrefix}${key}`, updatedAt: new Date() })
+        .where(eq(users.id, viewer.id))
+        .returning(profileColumns);
+    } catch (error) {
+      await removeStoredAvatar(`${avatarPathPrefix}${key}`);
+      throw error;
+    }
+    await removeStoredAvatar(viewer.avatarUrl);
+    res.status(201).json({ data: { user: updatedUser } });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.delete('/me/avatar', avatarLimiter, async (req, res, next) => {
+  try {
+    const db = getDb();
+    if (!db) return sendError(res, 503, 'UNAVAILABLE', 'Service unavailable.');
+    const viewer = await current(req.cookies?.lumen_session);
+    if (!viewer) return sendError(res, 401, 'UNAUTHENTICATED', 'Authentication required.');
+    const [updatedUser] = await db
+      .update(users)
+      .set({ avatarUrl: null, updatedAt: new Date() })
+      .where(eq(users.id, viewer.id))
+      .returning(profileColumns);
+    await removeStoredAvatar(viewer.avatarUrl);
+    res.json({ data: { user: updatedUser } });
   } catch (error) {
     next(error);
   }

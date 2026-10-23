@@ -105,6 +105,7 @@ router.get('/', (req, res, next) => {
         createdAt: sql<string>`to_char(${notifications.createdAt} at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')`,
         readAt: notifications.readAt,
         actorUsername: users.username,
+        actorAvatarUrl: users.avatarUrl,
         relatedUsername: sql<string | null>`(
           select ${users.username} from ${users}
           where ${users.id} = ${notifications.relatedUserId}
@@ -141,6 +142,7 @@ router.get('/', (req, res, next) => {
           id: notification.id,
           type: notification.type,
           actorUsername: notification.actorUsername,
+          actorAvatarUrl: notification.actorAvatarUrl,
           createdAt: notification.createdAt,
           readAt: notification.readAt?.toISOString() ?? null,
           postId: canLinkPost ? notification.postId : null,

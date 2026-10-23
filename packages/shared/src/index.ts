@@ -15,6 +15,9 @@ export const usernameSchema = z
   .max(30)
   .regex(/^[a-zA-Z0-9._]+$/, 'Use letters, numbers, periods, and underscores only.');
 
+/** Absolute URL, or an API path such as /users/avatars/<key>.webp for uploaded photos. */
+export const avatarUrlSchema = z.string().max(2048).nullable().optional();
+
 export const postCaptionSchema = z.string().trim().min(1).max(2200);
 
 export const postResponseSchema = z.object({
@@ -32,6 +35,7 @@ export const feedPostSchema = z.object({
   createdAt: z.string().datetime({ offset: true }),
   authorId: z.string().uuid(),
   authorUsername: usernameSchema,
+  authorAvatarUrl: avatarUrlSchema,
   imageUrl: z.string().startsWith('/posts/'),
   likeCount: z.number().int().nonnegative(),
   likedByMe: z.boolean(),
@@ -56,6 +60,7 @@ export const postCommentSchema = z.object({
   createdAt: z.string().datetime({ offset: true }),
   authorId: z.string().uuid(),
   authorUsername: usernameSchema,
+  authorAvatarUrl: avatarUrlSchema,
 });
 
 export const postCommentsResponseSchema = z.object({
@@ -87,7 +92,7 @@ export type ProfileSummary = z.infer<typeof profileSummarySchema>;
 export const discoveredProfileSchema = z.object({
   username: usernameSchema,
   displayName: z.string().optional(),
-  avatarUrl: z.string().url().nullable().optional(),
+  avatarUrl: avatarUrlSchema,
   isPrivate: z.boolean(),
   followState: followStateSchema,
 });
@@ -111,6 +116,7 @@ export const notificationTypeSchema = z.enum([
 export const notificationSchema = z.object({
   id: z.string().uuid(),
   actorUsername: usernameSchema,
+  actorAvatarUrl: avatarUrlSchema,
   type: notificationTypeSchema,
   createdAt: z.string().datetime({ offset: true }),
   readAt: z.string().datetime({ offset: true }).nullable(),
@@ -134,6 +140,7 @@ export const conversationSummarySchema = z.object({
   id: z.string().uuid(),
   username: usernameSchema,
   displayName: z.string(),
+  avatarUrl: avatarUrlSchema,
   requestStatus: conversationStatusSchema,
   requestedByMe: z.boolean(),
   lastMessageAt: z.string().datetime({ offset: true }),

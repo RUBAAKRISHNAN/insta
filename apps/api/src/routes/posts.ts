@@ -24,7 +24,12 @@ const supportedImages = {
   'image/webp': 'webp',
 } as const;
 type SupportedImageType = keyof typeof supportedImages;
-type CurrentUser = { id: string; isPrivate: boolean; username: string };
+type CurrentUser = {
+  id: string;
+  isPrivate: boolean;
+  username: string;
+  avatarUrl: string | null;
+};
 const cursorPayloadSchema = z
   .object({
     createdAt: z.string().datetime({ offset: true }),
@@ -51,7 +56,12 @@ async function currentUser(req: Request): Promise<CurrentUser | undefined> {
   if (!token || !db) return undefined;
   const tokenHash = createHash('sha256').update(token).digest('hex');
   const [user] = await db
-    .select({ id: users.id, isPrivate: users.isPrivate, username: users.username })
+    .select({
+      id: users.id,
+      isPrivate: users.isPrivate,
+      username: users.username,
+      avatarUrl: users.avatarUrl,
+    })
     .from(sessions)
     .innerJoin(users, eq(sessions.userId, users.id))
     .where(
@@ -191,6 +201,7 @@ export function createPostsRouter(storage: ImageStorage = imageStorage) {
           createdAt: sql<string>`to_char(${posts.createdAt} AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')`,
           authorId: users.id,
           authorUsername: users.username,
+          authorAvatarUrl: users.avatarUrl,
           likeCount: sql<number>`(select count(*)::int from post_likes where post_id = ${posts.id})`,
           likedByMe: sql<boolean>`exists (select 1 from post_likes where post_id = ${posts.id} and user_id = ${user.id})`,
         })
@@ -353,6 +364,7 @@ export function createPostsRouter(storage: ImageStorage = imageStorage) {
           createdAt: sql<string>`to_char(${postComments.createdAt} AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')`,
           authorId: users.id,
           authorUsername: users.username,
+          authorAvatarUrl: users.avatarUrl,
         })
         .from(postComments)
         .innerJoin(users, eq(postComments.userId, users.id))
@@ -476,6 +488,7 @@ export function createPostsRouter(storage: ImageStorage = imageStorage) {
         createdAt: created.createdAt.toISOString(),
         authorId: user.id,
         authorUsername: user.username,
+        authorAvatarUrl: user.avatarUrl,
       });
       res.status(201).json({ data: { comment: response } });
     })().catch(next);
