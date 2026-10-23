@@ -39,6 +39,7 @@ export const feedPostSchema = z.object({
   imageUrl: z.string().startsWith('/posts/'),
   likeCount: z.number().int().nonnegative(),
   likedByMe: z.boolean(),
+  commentCount: z.number().int().nonnegative().optional(),
 });
 
 export const postFeedResponseSchema = z.object({

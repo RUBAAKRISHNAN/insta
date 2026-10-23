@@ -27,6 +27,13 @@ function errorResponse(status: number, code: string, message: string) {
 let fetchMock: ReturnType<typeof vi.fn<typeof fetch>>;
 let feedFetchImplementation: typeof fetch | undefined;
 let commentsFetchImplementation: typeof fetch | undefined;
+let notificationBadgeImplementation: (() => Response) | undefined;
+let inboxBadgeImplementation: (() => Response) | undefined;
+
+/** Runs every active poll immediately, as returning to the tab does. */
+function triggerPolls() {
+  document.dispatchEvent(new Event('visibilitychange'));
+}
 
 function mockFetch(implementation: typeof fetch) {
   fetchMock.mockImplementation(implementation);
@@ -101,6 +108,9 @@ beforeEach(() => {
   fetchMock = vi.fn<typeof fetch>();
   feedFetchImplementation = undefined;
   commentsFetchImplementation = undefined;
+  notificationBadgeImplementation = undefined;
+  inboxBadgeImplementation = undefined;
+  window.localStorage.clear();
   vi.stubGlobal('fetch', ((input: RequestInfo | URL, init?: RequestInit) => {
     const url = new URL(String(input), window.location.href);
     const method = (init?.method ?? 'GET').toUpperCase();
@@ -118,6 +128,18 @@ beforeEach(() => {
     }
     if (method === 'GET' && url.pathname.endsWith(`/api/users/${profile.username}/posts`)) {
       return Promise.resolve(feedResponse());
+    }
+    if (method === 'GET' && url.pathname.endsWith('/api/notifications/unread-count')) {
+      return Promise.resolve(
+        notificationBadgeImplementation?.() ??
+          jsonResponse({ data: { count: 0, latestAt: null } }),
+      );
+    }
+    if (method === 'GET' && url.pathname.endsWith('/api/conversations/unread-count')) {
+      return Promise.resolve(
+        inboxBadgeImplementation?.() ??
+          jsonResponse({ data: { unreadConversations: 0, requests: 0 } }),
+      );
     }
     if (
       url.pathname.includes('/comments') &&
@@ -1813,5 +1835,109 @@ describe('authentication and profile UI', () => {
     await user.click(screen.getByRole('button', { name: 'Retry conversations' }));
     expect(await screen.findByRole('button', { name: /second_user/ })).toBeInTheDocument();
     expect(cursorRequests).toBe(2);
+  });
+});
+
+describe('live updates', () => {
+  it('shows unread message and activity badges and clears the activity dot when opened', async () => {
+    const user = userEvent.setup();
+    inboxBadgeImplementation = () =>
+      jsonResponse({ data: { unreadConversations: 2, requests: 1 } });
+    notificationBadgeImplementation = () =>
+      jsonResponse({ data: { count: 1, latestAt: new Date().toISOString() } });
+    mockFetch(async (input) => {
+      const url = String(input);
+      if (url.endsWith('/auth/me')) return authenticatedResponse();
+      if (url.includes('/notifications?')) {
+        return jsonResponse({ data: { notifications: [], nextCursor: null } });
+      }
+      throw new Error(`Unexpected request: ${url}`);
+    });
+    render(<App />);
+
+    const messages = await screen.findByRole('button', { name: 'Messages' });
+    await waitFor(() => expect(messages).toHaveAccessibleDescription('2 unread conversations'));
+    const notifications = screen.getByRole('button', { name: 'Notifications' });
+    expect(notifications).toHaveAccessibleDescription('New activity');
+
+    await user.click(notifications);
+    await waitFor(() => expect(notifications).not.toHaveAccessibleDescription('New activity'));
+  });
+
+  it('refreshes like and comment counts and offers newly published posts', async () => {
+    const user = userEvent.setup();
+    mockFetch(async (input) => {
+      if (String(input).endsWith('/auth/me')) return authenticatedResponse();
+      throw new Error(`Unexpected request: ${String(input)}`);
+    });
+    const newerPost = {
+      ...feedPost,
+      id: '77777777-7777-4777-8777-777777777777',
+      caption: 'Fresh from the oven',
+      createdAt: '2026-10-22T12:00:00.000000Z',
+    };
+    feedFetchImplementation = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(feedResponse([{ ...feedPost, commentCount: 0 }]))
+      .mockResolvedValue(
+        feedResponse([newerPost, { ...feedPost, likeCount: 5, commentCount: 3 }]),
+      );
+    render(<App />);
+
+    expect(await screen.findByText('A sunny afternoon')).toBeInTheDocument();
+    expect(screen.getByText('0 likes')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /View/ })).not.toBeInTheDocument();
+
+    triggerPolls();
+
+    expect(await screen.findByText('5 likes')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'View all 3 comments' })).toBeInTheDocument();
+    expect(screen.queryByText('Fresh from the oven')).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: '1 new post' }));
+    expect(screen.getByText('Fresh from the oven')).toBeInTheDocument();
+  });
+
+  it('shows an incoming message request without reloading the inbox', async () => {
+    const user = userEvent.setup();
+    let inboxLoads = 0;
+    mockFetch(async (input) => {
+      const url = new URL(String(input));
+      if (url.pathname.endsWith('/auth/me')) return authenticatedResponse();
+      if (url.pathname.endsWith('/conversations')) {
+        inboxLoads += 1;
+        return jsonResponse({
+          data: {
+            conversations:
+              inboxLoads === 1
+                ? []
+                : [
+                    {
+                      id: '45454545-4545-4545-8545-454545454545',
+                      username: 'new_friend',
+                      displayName: 'New Friend',
+                      requestStatus: 'pending',
+                      requestedByMe: false,
+                      lastMessageAt: '2026-10-22T08:00:00.000Z',
+                      unreadCount: 1,
+                    },
+                  ],
+            nextCursor: null,
+          },
+        });
+      }
+      throw new Error(`Unexpected request: ${String(input)}`);
+    });
+    render(<App />);
+
+    await screen.findByText('Rubaagram User');
+    await user.click(screen.getByRole('button', { name: 'Messages' }));
+    expect(await screen.findByText('No conversations yet.')).toBeInTheDocument();
+
+    triggerPolls();
+
+    expect(await screen.findByText('1 person wants to message you')).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'Requests (1)' })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: /Message requests/ }));
+    expect(await screen.findByRole('button', { name: /new_friend/ })).toBeInTheDocument();
   });
 });

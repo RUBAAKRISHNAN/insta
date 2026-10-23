@@ -204,6 +204,7 @@ export function createPostsRouter(storage: ImageStorage = imageStorage) {
           authorAvatarUrl: users.avatarUrl,
           likeCount: sql<number>`(select count(*)::int from post_likes where post_id = ${posts.id})`,
           likedByMe: sql<boolean>`exists (select 1 from post_likes where post_id = ${posts.id} and user_id = ${user.id})`,
+          commentCount: sql<number>`(select count(*)::int from post_comments where post_id = ${posts.id})`,
         })
         .from(posts)
         .innerJoin(users, eq(posts.userId, users.id))

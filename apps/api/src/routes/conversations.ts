@@ -258,6 +258,58 @@ router.get('/', (req, res, next) => {
   })().catch(next);
 });
 
+/** Conversations with unread messages or an incoming request, for the inbox badge. */
+router.get('/unread-count', (req, res, next) => {
+  void (async () => {
+    const db = getDb();
+    if (!db) {
+      sendError(res, 503, 'UNAVAILABLE', 'Service unavailable.');
+      return;
+    }
+    const userId = await currentUserId(req);
+    if (!userId) {
+      sendError(res, 401, 'UNAUTHENTICATED', 'Authentication required.');
+      return;
+    }
+    const [row] = await db
+      .select({
+        unreadConversations: sql<number>`count(*)::int`,
+        requests: sql<number>`count(*) filter (
+          where ${conversations.requestStatus} = 'pending'
+            and ${conversations.requestedById} <> ${userId}
+        )::int`,
+      })
+      .from(conversations)
+      .innerJoin(
+        conversationParticipants,
+        and(
+          eq(conversationParticipants.conversationId, conversations.id),
+          eq(conversationParticipants.userId, userId),
+        ),
+      )
+      .where(
+        or(
+          and(
+            eq(conversations.requestStatus, 'pending'),
+            sql`${conversations.requestedById} <> ${userId}`,
+          ),
+          sql`exists (
+            select 1 from ${messages}
+            where ${messages.conversationId} = ${conversations.id}
+              and ${messages.senderId} <> ${userId}
+              and ${messages.createdAt} > coalesce(
+                ${conversationParticipants.lastReadAt},
+                '-infinity'::timestamptz
+              )
+          )`,
+        ),
+      );
+    res.json({
+      data: { unreadConversations: row?.unreadConversations ?? 0, requests: row?.requests ?? 0 },
+    });
+  })().catch(next);
+});
+
 router.post('/:username', createLimiter, (req, res, next) => {
   void (async () => {
     const db = getDb();
@@ -333,8 +385,9 @@ router.post('/:username', createLimiter, (req, res, next) => {
           .limit(1);
         return existing ? { conversation: existing, created: false } : undefined;
       }
+      // Only the sender has read the opening message; it stays unread for the recipient.
       await tx.insert(conversationParticipants).values([
-        { conversationId: created.id, userId: participantLowId, lastReadAt: new Date() },
+        { conversationId: created.id, userId: participantLowId },
         { conversationId: created.id, userId: participantHighId },
       ]);
       const [firstMessage] = await tx

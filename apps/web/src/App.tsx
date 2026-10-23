@@ -1,5 +1,6 @@
 import {
   ArrowLeft,
+  ArrowUp,
   Camera,
   ChevronLeft,
   ChevronRight,
@@ -325,6 +326,28 @@ function useBodyScrollLock(active: boolean) {
       document.body.style.overflow = previous;
     };
   }, [active]);
+}
+
+/**
+ * Re-runs `callback` every `intervalMs` while the tab is visible, and right away when the
+ * tab becomes visible again, so counts and conversations stay current without a reload.
+ */
+function usePolling(callback: () => void, intervalMs: number, enabled = true) {
+  const saved = useRef(callback);
+  saved.current = callback;
+
+  useEffect(() => {
+    if (!enabled) return;
+    const tick = () => {
+      if (document.visibilityState !== 'hidden') saved.current();
+    };
+    const timer = window.setInterval(tick, intervalMs);
+    document.addEventListener('visibilitychange', tick);
+    return () => {
+      window.clearInterval(timer);
+      document.removeEventListener('visibilitychange', tick);
+    };
+  }, [intervalMs, enabled]);
 }
 
 /** Calls `onVisible` when the sentinel scrolls into view (infinite scroll). */
@@ -789,9 +812,54 @@ function Shell({
   const [messageTarget, setMessageTarget] = useState('');
   const [changingPhoto, setChangingPhoto] = useState(false);
 
+  const [unreadMessages, setUnreadMessages] = useState(0);
+  const [hasNewActivity, setHasNewActivity] = useState(false);
+  const activitySeenKey = `rubaagram-activity-seen:${user.id}`;
+
   const refresh = useCallback(() => setRefreshKey((current) => current + 1), []);
   const closePanel = useCallback(() => setPanel(null), []);
   useEscape(closePanel, panel !== null);
+
+  const refreshBadges = useCallback(async () => {
+    try {
+      const [activity, inbox] = await Promise.all([
+        request<{ data: { count: number; latestAt: string | null } }>(
+          '/notifications/unread-count',
+        ),
+        request<{ data: { unreadConversations: number; requests: number } }>(
+          '/conversations/unread-count',
+        ),
+      ]);
+      setUnreadMessages(inbox.data.unreadConversations);
+      let seenAt: string | null = null;
+      try {
+        seenAt = window.localStorage.getItem(activitySeenKey);
+      } catch {
+        // Without storage the dot simply follows the unread count.
+      }
+      const latest = activity.data.latestAt ? Date.parse(activity.data.latestAt) : 0;
+      setHasNewActivity(
+        activity.data.count > 0 && (!seenAt || latest > Date.parse(seenAt)),
+      );
+    } catch {
+      // Badges are best-effort; the next poll tries again.
+    }
+  }, [activitySeenKey]);
+
+  useEffect(() => {
+    void refreshBadges();
+  }, [refreshBadges, route, panel]);
+  usePolling(() => void refreshBadges(), 15000);
+
+  useEffect(() => {
+    if (panel !== 'notifications') return;
+    setHasNewActivity(false);
+    try {
+      window.localStorage.setItem(activitySeenKey, new Date().toISOString());
+    } catch {
+      // Ignore unavailable storage.
+    }
+  }, [panel, activitySeenKey]);
 
   const go = useCallback(
     (next: Route) => {
@@ -833,6 +901,7 @@ function Shell({
     onClick: () => void;
     expanded?: boolean;
     className?: string;
+    badge?: { count?: number; label: string };
   }> = [
     {
       key: 'home',
@@ -855,6 +924,13 @@ function Shell({
       icon: <Send aria-hidden="true" />,
       active: panel === null && route.name === 'inbox',
       onClick: () => go({ name: 'inbox' }),
+      badge:
+        unreadMessages > 0
+          ? {
+              count: unreadMessages,
+              label: `${unreadMessages} unread ${unreadMessages === 1 ? 'conversation' : 'conversations'}`,
+            }
+          : undefined,
     },
     {
       key: 'notifications',
@@ -864,6 +940,7 @@ function Shell({
       expanded: panel === 'notifications',
       onClick: () => togglePanel('notifications'),
       className: 'nav-desktop-only',
+      badge: hasNewActivity ? { label: 'New activity' } : undefined,
     },
     {
       key: 'create',
@@ -906,9 +983,25 @@ function Shell({
               className={`nav-item ${item.active ? 'is-active' : ''} ${item.className ?? ''}`}
               aria-current={item.active && item.expanded === undefined ? 'page' : undefined}
               aria-expanded={item.expanded}
+              aria-describedby={item.badge ? `nav-badge-${item.key}` : undefined}
               onClick={item.onClick}
             >
-              <span className="nav-icon">{item.icon}</span>
+              <span className="nav-icon">
+                {item.icon}
+                {item.badge && (
+                  // Hidden from the button's name; announced through aria-describedby.
+                  <span
+                    className={item.badge.count ? 'nav-badge' : 'nav-dot'}
+                    aria-hidden="true"
+                    title={item.badge.label}
+                  >
+                    {item.badge.count ? (item.badge.count > 9 ? '9+' : item.badge.count) : null}
+                    <span className="sr-only" id={`nav-badge-${item.key}`}>
+                      {item.badge.label}
+                    </span>
+                  </span>
+                )}
+              </span>
               <span className="nav-label">{item.label}</span>
             </button>
           ))}
@@ -973,6 +1066,7 @@ function Shell({
             onOpenProfile={openProfile}
             onOpenNotifications={() => togglePanel('notifications')}
             onOpenSearch={() => togglePanel('search')}
+            hasNewActivity={hasNewActivity}
           />
         )}
         {route.name === 'profile' && (
@@ -1006,6 +1100,7 @@ function Shell({
             initialRecipient={messageTarget}
             onRecipientConsumed={() => setMessageTarget('')}
             onOpenProfile={openProfile}
+            onReadStateChange={() => void refreshBadges()}
           />
         )}
       </main>
@@ -1042,19 +1137,27 @@ function HomeView({
   onOpenProfile,
   onOpenNotifications,
   onOpenSearch,
+  hasNewActivity,
 }: {
   user: User;
   refreshKey: number;
   onOpenProfile: (username: string) => void;
   onOpenNotifications: () => void;
   onOpenSearch: () => void;
+  hasNewActivity: boolean;
 }) {
   return (
     <div className="home">
       <header className="mobile-topbar">
         <Wordmark />
-        <button type="button" className="icon-btn" aria-label="Activity" onClick={onOpenNotifications}>
+        <button
+          type="button"
+          className="icon-btn topbar-activity"
+          aria-label={hasNewActivity ? 'Activity, new' : 'Activity'}
+          onClick={onOpenNotifications}
+        >
           <Heart aria-hidden="true" />
+          {hasNewActivity && <span className="nav-dot" aria-hidden="true" />}
         </button>
       </header>
       <HomeFeed
@@ -1117,12 +1220,59 @@ function HomeFeed({
   const [loadingMore, setLoadingMore] = useState(false);
   const [moreError, setMoreError] = useState('');
   const [openPostId, setOpenPostId] = useState<string | null>(null);
+  const [newPosts, setNewPosts] = useState<FeedPostWithLikes[]>([]);
   const openPost = posts.find((post) => post.id === openPostId);
+
+  // Keep likes and comment counts live, and collect posts published since the feed loaded.
+  usePolling(
+    () => {
+      void request<{ data: PostFeedResponse }>('/posts')
+        .then((response) => {
+          const latest = new Map(response.data.posts.map((post) => [post.id, post]));
+          setPosts((current) => {
+            const known = new Set(current.map((post) => post.id));
+            const newestKnown = current[0]?.createdAt ?? '';
+            setNewPosts(
+              response.data.posts.filter(
+                (post) => !known.has(post.id) && post.createdAt > newestKnown,
+              ),
+            );
+            return current.map((post) => {
+              const fresh = latest.get(post.id);
+              return fresh
+                ? {
+                    ...post,
+                    likeCount: fresh.likeCount,
+                    likedByMe: fresh.likedByMe,
+                    commentCount: fresh.commentCount,
+                    authorAvatarUrl: fresh.authorAvatarUrl,
+                  }
+                : post;
+            });
+          });
+        })
+        .catch(() => {
+          // A missed refresh is retried on the next tick.
+        });
+    },
+    10000,
+    state === 'ready',
+  );
+
+  function showNewPosts() {
+    setPosts((current) => {
+      const known = new Set(current.map((post) => post.id));
+      return [...newPosts.filter((post) => !known.has(post.id)), ...current];
+    });
+    setNewPosts([]);
+    document.documentElement.scrollTo?.({ top: 0, behavior: 'smooth' });
+  }
 
   useEffect(() => {
     let active = true;
     setState('loading');
     setPosts([]);
+    setNewPosts([]);
     setNextCursor(null);
     setMoreError('');
 
@@ -1194,6 +1344,14 @@ function HomeFeed({
           <p>Posts from public profiles will appear here.</p>
           <button type="button" className="btn btn-primary" onClick={onOpenSearch}>
             Find people
+          </button>
+        </div>
+      )}
+      {state === 'ready' && newPosts.length > 0 && (
+        <div className="new-posts-row">
+          <button type="button" className="new-posts-pill" onClick={showNewPosts}>
+            <ArrowUp aria-hidden="true" />
+            {newPosts.length === 1 ? '1 new post' : `${newPosts.length} new posts`}
           </button>
         </div>
       )}
@@ -1457,6 +1615,43 @@ function FeedPostCard({
     // Load once when the post viewer opens.
   }, []);
 
+  // While the viewer is open, pull in comments other people post.
+  usePolling(
+    () => {
+      void request<{ data: PostCommentsResponse }>(`/posts/${post.id}/comments`)
+        .then((response) => {
+          const fresh = response.data.comments;
+          const freshIds = new Set(fresh.map((comment) => comment.id));
+          const oldestFresh = fresh[fresh.length - 1]?.createdAt;
+          setComments((current) => [
+            ...fresh,
+            // Keep older pages the viewer already loaded.
+            ...current.filter(
+              (comment) =>
+                !freshIds.has(comment.id) &&
+                oldestFresh !== undefined &&
+                comment.createdAt < oldestFresh,
+            ),
+          ]);
+        })
+        .catch(() => {
+          // Retried on the next tick.
+        });
+    },
+    5000,
+    isModal && commentsState === 'ready' && !submittingComment && deletingCommentId === null,
+  );
+
+  function changeCommentCount(delta: number) {
+    if (post.commentCount === undefined) return;
+    onChange?.({
+      ...post,
+      likedByMe: liked,
+      likeCount,
+      commentCount: Math.max(0, post.commentCount + delta),
+    });
+  }
+
   useEffect(() => {
     const input = commentInput.current;
     if (!input) return;
@@ -1537,6 +1732,7 @@ function FeedPostCard({
       setCommentDraft('');
       setCommentRequestKey(null);
       if (isModal) setCommentsState('ready');
+      changeCommentCount(1);
     } catch (error) {
       setCommentMutationError(
         userErrorMessage(error, 'Unable to add your comment. Please try again.'),
@@ -1553,6 +1749,7 @@ function FeedPostCard({
     try {
       await request<void>(`/posts/${post.id}/comments/${commentId}`, { method: 'DELETE' });
       setComments((current) => current.filter((comment) => comment.id !== commentId));
+      changeCommentCount(-1);
     } catch (error) {
       setCommentMutationError(
         userErrorMessage(error, 'Unable to delete your comment. Please try again.'),
@@ -1810,9 +2007,13 @@ function FeedPostCard({
       {media}
       {actions}
       <Caption username={post.authorUsername} text={post.caption} onOpenProfile={onOpenProfile} />
-      {onOpenPost && (
+      {onOpenPost && post.commentCount !== 0 && (
         <button type="button" className="muted-button view-comments" onClick={onOpenPost}>
-          View comments
+          {post.commentCount === undefined
+            ? 'View comments'
+            : post.commentCount === 1
+              ? 'View 1 comment'
+              : `View all ${formatCount(post.commentCount)} comments`}
         </button>
       )}
       {comments.length > 0 && renderComments(true)}
@@ -2335,6 +2536,26 @@ function NotificationsPanel({
       active = false;
     };
   }, [retry]);
+
+  // New likes, comments and follows show up while the panel is open.
+  usePolling(
+    () => {
+      void request<{ data: NotificationsResponse }>('/notifications?limit=20')
+        .then((response) => {
+          const fresh = response.data.notifications;
+          const freshIds = new Set(fresh.map((notification) => notification.id));
+          setNotifications((current) => [
+            ...fresh,
+            ...current.filter((notification) => !freshIds.has(notification.id)),
+          ]);
+        })
+        .catch(() => {
+          // Retried on the next tick.
+        });
+    },
+    10000,
+    state === 'ready' && view === 'activity' && markingId === null && !loadingMore,
+  );
 
   async function loadMore() {
     if (!cursor || loadingMore) return;
@@ -3285,11 +3506,13 @@ function MessagesPage({
   initialRecipient,
   onRecipientConsumed,
   onOpenProfile,
+  onReadStateChange,
 }: {
   currentUser: User;
   initialRecipient: string;
   onRecipientConsumed: () => void;
   onOpenProfile: (username: string) => void;
+  onReadStateChange?: () => void;
 }) {
   const currentUserId = currentUser.id;
   const [tab, setTab] = useState<'primary' | 'requests'>('primary');
@@ -3405,6 +3628,7 @@ function MessagesPage({
         setMessageState('ready');
         try {
           await request(`/conversations/${selected.id}/read`, { method: 'PUT' });
+          onReadStateChange?.();
           if (active) {
             setConversations((current) =>
               current.map((conversation) =>
@@ -3436,10 +3660,78 @@ function MessagesPage({
     // The conversation reloads when its id changes or a retry is requested.
   }, [selected?.id, retryMessages]);
 
+  // Pick up new conversations, message requests and request answers without a reload.
+  usePolling(
+    () => {
+      void request<{ data: ConversationsResponse }>('/conversations?limit=30')
+        .then((response) => {
+          const fresh = response.data.conversations;
+          const freshIds = new Set(fresh.map((conversation) => conversation.id));
+          setConversations((current) => [
+            ...fresh,
+            ...current.filter((conversation) => !freshIds.has(conversation.id)),
+          ]);
+          setSelected((current) => {
+            if (!current) return current;
+            const updated = fresh.find((conversation) => conversation.id === current.id);
+            return updated && updated.requestStatus !== current.requestStatus
+              ? { ...current, requestStatus: updated.requestStatus }
+              : current;
+          });
+        })
+        .catch(() => {
+          // Retried on the next tick.
+        });
+    },
+    5000,
+    inboxState === 'ready',
+  );
+
+  // Pull new messages into the open conversation.
+  usePolling(
+    () => {
+      if (!selected) return;
+      const conversationId = selected.id;
+      void request<{ data: DirectMessagesResponse }>(
+        `/conversations/${conversationId}/messages?limit=30`,
+      )
+        .then((response) => {
+          if (selectedIdRef.current !== conversationId) return;
+          const known = new Set(messagesRef.current.map((message) => message.id));
+          const added = response.data.messages.filter((message) => !known.has(message.id));
+          if (added.length === 0) return;
+          setMessages((current) => {
+            const currentIds = new Set(current.map((message) => message.id));
+            return [...added.filter((message) => !currentIds.has(message.id)), ...current];
+          });
+          if (added.some((message) => message.senderId !== currentUserId)) {
+            void request(`/conversations/${conversationId}/read`, { method: 'PUT' })
+              .then(() => onReadStateChange?.())
+              .catch(() => {
+                // The next poll marks it read.
+              });
+          }
+        })
+        .catch(() => {
+          // Retried on the next tick.
+        });
+    },
+    3000,
+    messageState === 'ready' && !sending,
+  );
+
+  const selectedIdRef = useRef<string | null>(null);
+  selectedIdRef.current = selected?.id ?? null;
+  const messagesRef = useRef<DirectMessage[]>([]);
+  messagesRef.current = messages;
+  const lastMessageId = messages[0]?.id;
+
+  // Jump to the newest message when the thread opens or a new message arrives,
+  // but not when older history is loaded above.
   useEffect(() => {
     const node = threadBody.current;
     if (node && !loadingOlder) node.scrollTop = node.scrollHeight;
-  }, [messages, loadingOlder]);
+  }, [lastMessageId, selected?.id, loadingOlder]);
 
   async function startConversation(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -3624,7 +3916,13 @@ function MessagesPage({
             className={tab === 'requests' ? 'is-active' : ''}
             onClick={() => setTab('requests')}
           >
-            Requests{incomingRequests.length > 0 ? ` (${incomingRequests.length})` : ''}
+            Requests
+            {incomingRequests.length > 0 && (
+              <>
+                {' '}
+                <span className="tab-count">({incomingRequests.length})</span>
+              </>
+            )}
           </button>
         </div>
         <div className="inbox-scroll">
@@ -3644,6 +3942,22 @@ function MessagesPage({
                 Retry inbox
               </button>
             </div>
+          )}
+          {inboxState === 'ready' && tab === 'primary' && incomingRequests.length > 0 && (
+            <button type="button" className="request-banner" onClick={() => setTab('requests')}>
+              <span className="request-banner-icon" aria-hidden="true">
+                <MessageCircle />
+              </span>
+              <span className="person-text">
+                <strong>Message requests</strong>
+                <span>
+                  {incomingRequests.length === 1
+                    ? '1 person wants to message you'
+                    : `${incomingRequests.length} people want to message you`}
+                </span>
+              </span>
+              <ChevronRight aria-hidden="true" className="row-chevron" />
+            </button>
           )}
           {inboxState === 'ready' && visibleConversations.length === 0 && (
             <p className="drawer-hint">

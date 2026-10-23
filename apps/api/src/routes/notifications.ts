@@ -61,6 +61,30 @@ async function currentUserId(req: Request): Promise<string | undefined> {
   return user?.id;
 }
 
+/** Unread notification count and the newest unread time, for the activity badge. */
+router.get('/unread-count', (req, res, next) => {
+  void (async () => {
+    const db = getDb();
+    if (!db) {
+      sendError(res, 503, 'UNAVAILABLE', 'Service unavailable.');
+      return;
+    }
+    const recipientId = await currentUserId(req);
+    if (!recipientId) {
+      sendError(res, 401, 'UNAUTHENTICATED', 'Authentication required.');
+      return;
+    }
+    const [row] = await db
+      .select({
+        count: sql<number>`count(*)::int`,
+        latestAt: sql<string | null>`to_char(max(${notifications.createdAt}) at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')`,
+      })
+      .from(notifications)
+      .where(and(eq(notifications.recipientId, recipientId), isNull(notifications.readAt)));
+    res.json({ data: { count: row?.count ?? 0, latestAt: row?.latestAt ?? null } });
+  })().catch(next);
+});
+
 router.get('/', (req, res, next) => {
   void (async () => {
     const db = getDb();
