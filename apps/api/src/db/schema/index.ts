@@ -6,3 +6,4 @@ export * from './post-comments.js';
 export * from './follows.js';
 export * from './notifications.js';
 export * from './conversations.js';
+export * from './stored-images.js';

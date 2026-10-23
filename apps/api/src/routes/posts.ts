@@ -618,6 +618,10 @@ export function createPostsRouter(storage: ImageStorage = imageStorage) {
         return;
       }
       const viewer = await currentUser(req);
+      if (!viewer) {
+        respondError(res, 401, 'UNAUTHENTICATED', 'Authentication required.');
+        return;
+      }
       const [post] = await db
         .select({
           imageKey: posts.imageKey,
@@ -625,12 +629,7 @@ export function createPostsRouter(storage: ImageStorage = imageStorage) {
         })
         .from(posts)
         .innerJoin(users, eq(posts.userId, users.id))
-        .where(
-          and(
-            eq(posts.id, req.params.postId),
-            viewer ? visibleAccount(viewer.id) : eq(users.isPrivate, false),
-          ),
-        )
+        .where(and(eq(posts.id, req.params.postId), visibleAccount(viewer.id)))
         .limit(1);
       if (!post) {
         respondError(res, 404, 'NOT_FOUND', 'Post image not found.');

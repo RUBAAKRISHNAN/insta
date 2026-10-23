@@ -43,6 +43,13 @@
       "when": 1792641450255,
       "tag": "0005_flimsy_tyger_tiger",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1792767904485,
+      "tag": "0006_stored_images",
+      "breakpoints": true
     }
   ]
 }

@@ -50,7 +50,7 @@ const environmentSchema = z
     PORT: z.coerce.number().int().min(1).max(65535).default(4000),
     WEB_ORIGIN: z.string().url().optional(),
     DATABASE_URL: z.string().url().startsWith('postgresql://').optional(),
-    IMAGE_STORAGE: z.enum(['local']).default('local'),
+    IMAGE_STORAGE: z.enum(['local', 'database']).default('local'),
     IMAGE_UPLOAD_DIR: z.string().min(1).optional(),
   })
   .superRefine((values, context) => {

@@ -29,6 +29,16 @@ describe('API environment validation', () => {
     }
   });
 
+  it('defaults to local image storage and accepts durable database storage', () => {
+    const defaults = parseApiEnvironment({});
+    expect(defaults.success && defaults.data.IMAGE_STORAGE).toBe('local');
+
+    const database = parseApiEnvironment({ ...validProductionEnvironment, IMAGE_STORAGE: 'database' });
+    expect(database.success && database.data.IMAGE_STORAGE).toBe('database');
+
+    expect(parseApiEnvironment({ IMAGE_STORAGE: 's3' }).success).toBe(false);
+  });
+
   it('requires explicit production mode when production settings are supplied', () => {
     const { NODE_ENV: _nodeEnv, ...productionSettings } = validProductionEnvironment;
     const result = parseApiEnvironment(productionSettings);

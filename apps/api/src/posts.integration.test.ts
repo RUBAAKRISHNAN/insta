@@ -159,7 +159,7 @@ describe('database-backed post creation and image access', () => {
     expect(Buffer.from(ownerImage.body)).toEqual(png);
 
     const guestImage = await request(app).get(`/api${response.body.data.post.imageUrl}`);
-    expect(guestImage.status).toBe(404);
-    expect(guestImage.body.error.code).toBe('NOT_FOUND');
+    expect(guestImage.status).toBe(401);
+    expect(guestImage.body.error.code).toBe('UNAUTHENTICATED');
   });
 });

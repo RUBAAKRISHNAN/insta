@@ -210,15 +210,11 @@ describe('database-backed authentication integration', () => {
     expect(updated.status).toBe(200);
     expect(updated.body.data.user.isPrivate).toBe(true);
 
+    // Profiles are only visible to signed-in users; redaction for signed-in
+    // non-followers is covered by the follows integration suite.
     const guest = await request(app).get('/api/users').query({ username: account.username });
-    expect(guest.status).toBe(200);
-    expect(guest.body.data.user).toEqual({
-      username: account.username,
-      isPrivate: true,
-      followState: 'none',
-      followerCount: null,
-      followingCount: null,
-    });
+    expect(guest.status).toBe(401);
+    expect(guest.body.error.code).toBe('UNAUTHENTICATED');
 
     const ownerView = await owner.get('/api/users').query({ username: account.username });
     expect(ownerView.status).toBe(200);

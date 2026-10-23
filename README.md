@@ -36,7 +36,7 @@ Set `NODE_ENV=production`, `DATABASE_URL` to the separately provisioned producti
 
 Before deploying, provision a separate hosted database and verify its identity. Apply the existing migrations with `npm run db:migrate` only after explicitly setting `DATABASE_URL` to that target and confirming it is not a development database. Do not put database credentials in Vercel configuration or source control.
 
-The current image adapter writes to local disk. Render's free service filesystem is not durable across service restarts or redeploys, so uploaded images may be lost; this deployment setup does not add persistent storage. Recheck current Vercel, Render, and PostgreSQL provider limits before launch.
+`IMAGE_STORAGE=local` (the default) writes uploads to local disk. Render's free service filesystem is not durable across service restarts or redeploys, so local uploads are lost. On Render, apply the migrations (which create the `stored_images` table) and set `IMAGE_STORAGE=database` so post photos and profile photos are stored in PostgreSQL instead. Images already lost from a previous disk cannot be recovered; the app shows a "Photo unavailable" placeholder for them. Recheck current Vercel, Render, and PostgreSQL provider limits (including database storage size) before launch.
 
 ## Database
 

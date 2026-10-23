@@ -8,6 +8,7 @@ import {
   Grid3x3,
   Heart,
   House,
+  ImageOff,
   Images,
   Lock,
   LogOut,
@@ -133,6 +134,8 @@ function getErrorCode(body: unknown): string | undefined {
   return typeof error?.code === 'string' ? error.code : undefined;
 }
 
+let sessionExpiredHandler: (() => void) | undefined;
+
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   const method = (init.method ?? 'GET').toUpperCase();
   const headers = new Headers(init.headers);
@@ -166,6 +169,8 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
     });
     const body = response.status === 204 ? undefined : await readJson(response);
     if (!response.ok) {
+      // An expired or revoked session anywhere in the app sends the user back to log in.
+      if (response.status === 401 && !path.startsWith('/auth/')) sessionExpiredHandler?.();
       throw new ApiError(response.status, getErrorCode(body));
     }
     return body as T;
@@ -448,6 +453,53 @@ function Avatar({
   );
 }
 
+/**
+ * A post photo served by the API. If the file is gone (for example lost from a host's
+ * temporary disk) it shows a placeholder instead of the browser's broken-image icon.
+ */
+function PostImage({
+  src,
+  alt,
+  className,
+  loading,
+  compact = false,
+}: {
+  src: string;
+  alt: string;
+  className?: string;
+  loading?: 'lazy' | 'eager';
+  compact?: boolean;
+}) {
+  const [failed, setFailed] = useState(false);
+  useEffect(() => setFailed(false), [src]);
+
+  if (failed) {
+    return (
+      <span
+        className={`image-unavailable ${compact ? 'is-compact' : ''} ${className ?? ''}`}
+        role={alt ? 'img' : undefined}
+        aria-label={alt || undefined}
+        aria-hidden={alt ? undefined : true}
+      >
+        <ImageOff aria-hidden="true" />
+        {!compact && <span>Photo unavailable</span>}
+      </span>
+    );
+  }
+
+  return (
+    <img
+      className={className}
+      src={`${api}${src}`}
+      alt={alt}
+      crossOrigin="use-credentials"
+      loading={loading}
+      draggable={false}
+      onError={() => setFailed(true)}
+    />
+  );
+}
+
 function Spinner({ label, size = 18 }: { label?: string; size?: number }) {
   return (
     <span className="spinner-wrap">
@@ -543,11 +595,52 @@ export function App() {
   );
 }
 
+const loginPath = '/accounts/login';
+const signupPath = '/accounts/signup';
+const authPaths = new Set([loginPath, signupPath]);
+
+function isAuthPath(pathname: string) {
+  return authPaths.has(pathname.replace(/\/+$/, ''));
+}
+
+/** Where to go after signing in: the page that sent us to log in, if it is a safe in-app path. */
+function postLoginPath() {
+  const next = new URLSearchParams(window.location.search).get('next');
+  if (!next || !next.startsWith('/') || next.startsWith('//') || next.includes('\\')) return '/';
+  return isAuthPath(new URL(next, window.location.origin).pathname) ? '/' : next;
+}
+
+/** Signed-out visitors may only see the login and sign-up pages. */
+function redirectToLogin() {
+  const { pathname, search } = window.location;
+  if (isAuthPath(pathname)) return;
+  const requested = `${pathname}${search}`;
+  const query = requested === '/' ? '' : `?${new URLSearchParams({ next: requested })}`;
+  window.history.replaceState(null, '', `${loginPath}${query}`);
+}
+
 function Root() {
-  const [user, setUser] = useState<User | null>(null);
+  const [user, setUserState] = useState<User | null>(null);
   const [restoreState, setRestoreState] = useState<RestoreState>('loading');
   const [restoreAttempt, setRestoreAttempt] = useState(0);
   const theme = useTheme();
+
+  // Keep the URL in step with the session: signed-in users never sit on the
+  // login page, and signed-out users never stay on an app page.
+  const setUser = useCallback((next: User | null) => {
+    if (next && isAuthPath(window.location.pathname)) {
+      window.history.replaceState(null, '', postLoginPath());
+    }
+    if (!next) redirectToLogin();
+    setUserState(next);
+  }, []);
+
+  useEffect(() => {
+    sessionExpiredHandler = () => setUser(null);
+    return () => {
+      sessionExpiredHandler = undefined;
+    };
+  }, [setUser]);
 
   useEffect(() => {
     let active = true;
@@ -575,7 +668,7 @@ function Root() {
     return () => {
       active = false;
     };
-  }, [restoreAttempt]);
+  }, [restoreAttempt, setUser]);
 
   if (restoreState === 'loading') {
     return (
@@ -666,9 +759,24 @@ function AuthField({
 }
 
 function AuthPage({ onAuthenticated }: { onAuthenticated: (user: User) => void }) {
-  const [register, setRegister] = useState(false);
+  const [register, setRegisterState] = useState(
+    () => window.location.pathname.replace(/\/+$/, '') === signupPath,
+  );
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
+
+  useEffect(() => {
+    const onPopState = () =>
+      setRegisterState(window.location.pathname.replace(/\/+$/, '') === signupPath);
+    window.addEventListener('popstate', onPopState);
+    return () => window.removeEventListener('popstate', onPopState);
+  }, []);
+
+  function setRegister(next: boolean) {
+    // Keep ?next= so signing up still returns to the page that was requested.
+    window.history.pushState(null, '', `${next ? signupPath : loginPath}${window.location.search}`);
+    setRegisterState(next);
+  }
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -882,7 +990,7 @@ function Shell({
     setLoggingOut(true);
     try {
       await request<void>('/auth/logout', { method: 'POST' });
-      window.history.replaceState(null, '', '/');
+      window.history.replaceState(null, '', loginPath);
       setUser(null);
     } catch (logoutError) {
       setMoreOpen(false);
@@ -1827,12 +1935,10 @@ function FeedPostCard({
 
   const media = (
     <div className="post-media" onDoubleClick={likeFromImage}>
-      <img
+      <PostImage
         className="post-image"
-        src={`${api}${post.imageUrl}`}
+        src={post.imageUrl}
         alt={`Post by @${post.authorUsername}`}
-        crossOrigin="use-credentials"
-        draggable={false}
       />
       {burst > 0 && (
         <span key={burst} className="like-burst" aria-hidden="true">
@@ -2247,11 +2353,7 @@ function CreatePostModal({
               <p role="status" className="create-done-title">
                 Your post has been shared.
               </p>
-              <img
-                src={`${api}${createdPost.imageUrl}`}
-                alt="Your published post"
-                crossOrigin="use-credentials"
-              />
+              <PostImage src={createdPost.imageUrl} alt="Your published post" />
               <p className="create-done-caption">{createdPost.caption}</p>
               <button type="button" className="btn btn-primary" onClick={onClose}>
                 Done
@@ -2713,11 +2815,7 @@ function NotificationsPanel({
                         rel="noreferrer"
                         aria-label="View post"
                       >
-                        <img
-                          src={`${api}${notification.resourceUrl}`}
-                          alt=""
-                          crossOrigin="use-credentials"
-                        />
+                        <PostImage src={notification.resourceUrl} alt="" compact />
                       </a>
                     )}
                     {!notification.readAt && (
@@ -3189,12 +3287,7 @@ function ProfilePage({
                   key={post.id}
                   onClick={() => setOpenPost(post)}
                 >
-                  <img
-                    src={`${api}${post.imageUrl}`}
-                    alt={post.caption}
-                    crossOrigin="use-credentials"
-                    loading="lazy"
-                  />
+                  <PostImage src={post.imageUrl} alt={post.caption} loading="lazy" />
                   <span className="grid-overlay" aria-hidden="true">
                     <Heart fill="currentColor" /> {formatCount(post.likeCount)}
                   </span>

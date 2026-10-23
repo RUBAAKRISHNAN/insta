@@ -1,4 +1,4 @@
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { App } from './App';
@@ -1835,6 +1835,85 @@ describe('authentication and profile UI', () => {
     await user.click(screen.getByRole('button', { name: 'Retry conversations' }));
     expect(await screen.findByRole('button', { name: /second_user/ })).toBeInTheDocument();
     expect(cursorRequests).toBe(2);
+  });
+});
+
+describe('protected routes', () => {
+  it('sends signed-out visitors to log in and returns them to the requested page', async () => {
+    const user = userEvent.setup();
+    window.history.replaceState(null, '', '/rubaagram_user');
+    let signedIn = false;
+    mockFetch(async (input) => {
+      const url = String(input);
+      if (url.endsWith('/auth/me')) {
+        return signedIn ? authenticatedResponse() : unauthenticatedResponse();
+      }
+      if (url.endsWith('/csrf')) return csrfResponse();
+      if (url.endsWith('/auth/login')) {
+        signedIn = true;
+        return authenticatedResponse();
+      }
+      throw new Error(`Unexpected request: ${url}`);
+    });
+    render(<App />);
+
+    expect(await screen.findByRole('heading', { name: 'Log in' })).toBeInTheDocument();
+    expect(window.location.pathname).toBe('/accounts/login');
+    expect(new URLSearchParams(window.location.search).get('next')).toBe('/rubaagram_user');
+    expect(screen.queryByRole('navigation', { name: 'Main navigation' })).not.toBeInTheDocument();
+
+    await user.type(screen.getByLabelText('Email'), profile.email);
+    await user.type(screen.getByLabelText('Password'), 'Secure-password-123!');
+    await user.click(screen.getByRole('button', { name: 'Log in' }));
+
+    expect(await screen.findByRole('heading', { name: 'rubaagram_user' })).toBeInTheDocument();
+    expect(window.location.pathname).toBe('/rubaagram_user');
+  });
+
+  it('gives sign-up its own address and keeps signed-in users off the login page', async () => {
+    const user = await openSignedOutApp();
+    expect(window.location.pathname).toBe('/accounts/login');
+    await user.click(screen.getByRole('button', { name: 'Sign up' }));
+    expect(window.location.pathname).toBe('/accounts/signup');
+    expect(screen.getByLabelText('Full name')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Log in' }));
+    expect(window.location.pathname).toBe('/accounts/login');
+
+    cleanup();
+    window.history.replaceState(null, '', '/accounts/login');
+    mockFetch(async (input) => {
+      if (String(input).endsWith('/auth/me')) return authenticatedResponse();
+      throw new Error(`Unexpected request: ${String(input)}`);
+    });
+    render(<App />);
+    expect(await screen.findByText('Rubaagram User')).toBeInTheDocument();
+    expect(window.location.pathname).toBe('/');
+  });
+
+  it('returns to the login page when the session expires', async () => {
+    mockFetch(async (input) => {
+      if (String(input).endsWith('/auth/me')) return authenticatedResponse();
+      throw new Error(`Unexpected request: ${String(input)}`);
+    });
+    feedFetchImplementation = () => Promise.resolve(unauthenticatedResponse());
+    render(<App />);
+
+    expect(await screen.findByRole('heading', { name: 'Log in' })).toBeInTheDocument();
+    expect(window.location.pathname).toBe('/accounts/login');
+  });
+
+  it('shows a placeholder when a post photo is missing on the server', async () => {
+    mockFetch(async (input) => {
+      if (String(input).endsWith('/auth/me')) return authenticatedResponse();
+      throw new Error(`Unexpected request: ${String(input)}`);
+    });
+    feedFetchImplementation = () => Promise.resolve(feedResponse([feedPost]));
+    render(<App />);
+
+    const image = await screen.findByRole('img', { name: 'Post by @sunny_user' });
+    fireEvent.error(image);
+    expect(await screen.findByText('Photo unavailable')).toBeInTheDocument();
+    expect(screen.getByRole('img', { name: 'Post by @sunny_user' })).not.toHaveAttribute('src');
   });
 });
 

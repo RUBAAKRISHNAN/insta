@@ -440,6 +440,8 @@ router.get('/', async (req, res, next) => {
   try {
     const db = getDb();
     if (!db) return sendError(res, 503, 'UNAVAILABLE', 'Service unavailable.');
+    const viewer = await current(req.cookies?.lumen_session);
+    if (!viewer) return sendError(res, 401, 'UNAUTHENTICATED', 'Authentication required.');
     const parsedUsername = usernameSchema.safeParse(String(req.query.username ?? '').trim());
     if (!parsedUsername.success) {
       return sendError(res, 400, 'VALIDATION_ERROR', 'A valid username is required.');
@@ -457,9 +459,8 @@ router.get('/', async (req, res, next) => {
       .where(eq(users.username, parsedUsername.data.toLowerCase()))
       .limit(1);
     if (!target) return sendError(res, 404, 'NOT_FOUND', 'Profile not found.');
-    const viewer = await current(req.cookies?.lumen_session);
     let followState: 'none' | 'pending' | 'following' = 'none';
-    if (viewer && viewer.id !== target.id) {
+    if (viewer.id !== target.id) {
       const [relationship] = await db
         .select({ status: follows.status })
         .from(follows)
@@ -623,6 +624,8 @@ const profileColumns = {
 
 router.get('/avatars/:key', async (req, res, next) => {
   try {
+    const viewer = await current(req.cookies?.lumen_session);
+    if (!viewer) return sendError(res, 401, 'UNAUTHENTICATED', 'Authentication required.');
     const key = req.params.key;
     if (!avatarKeyPattern.test(key)) return sendError(res, 404, 'NOT_FOUND', 'Photo not found.');
     const image = await imageStorage.read(key);
@@ -631,7 +634,7 @@ router.get('/avatars/:key', async (req, res, next) => {
     res
       .type(avatarContentTypes[extension])
       .set('X-Content-Type-Options', 'nosniff')
-      .set('Cache-Control', 'public, max-age=31536000, immutable')
+      .set('Cache-Control', 'private, max-age=31536000, immutable')
       .send(image);
   } catch (error) {
     next(error);
